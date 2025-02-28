@@ -1,0 +1,30 @@
+uses
+  IdHTTP, System.Classes;
+
+procedure SendTextPost;
+var
+  url, data, response: string;
+  http: TIdHTTP;
+begin
+  url := 'https://gateway.apibrasil.io/api/v2/whatsapp/sendText';
+
+  data := '{"number":"5531994359434","text":"Muito top!"}';
+
+  http := TIdHTTP.Create;
+  try
+    http.Request.ContentType := 'application/json';
+    http.Request.CustomHeaders.Add('DeviceToken: OBTENHA_O_SEU_DEVICE_TOKEN_NO_PAINEL');
+    http.Request.CustomHeaders.Add('Authorization: Bearer OBTENHA_O_SEU_TOKEN');
+
+    response := http.Post(url, TStringStream.Create(data));
+  finally
+    http.Free;
+  end;
+
+  ShowMessage(response);
+end;
+
+procedure YourProcedure;
+begin
+  SendTextPost;
+end;
