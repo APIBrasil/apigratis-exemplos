@@ -1,0 +1,15 @@
+{
+  "jsonrpc": "2.0",
+  "id": "consulta",
+  "method": "tools/call",
+  "params": {
+    "name": "apibrasil.credits.consulta",
+    "arguments": {
+      "service": "cnpj",
+      "payload": {
+        "cnpj": "00000000000000",
+        "homolog": true
+      }
+    }
+  }
+}

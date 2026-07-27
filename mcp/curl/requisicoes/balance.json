@@ -1,0 +1,9 @@
+{
+  "jsonrpc": "2.0",
+  "id": "balance",
+  "method": "tools/call",
+  "params": {
+    "name": "apibrasil.balance.get",
+    "arguments": {}
+  }
+}

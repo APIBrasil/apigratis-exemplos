@@ -1,0 +1,2 @@
+# SDK oficial do Model Context Protocol para Python
+mcp>=1.9.0

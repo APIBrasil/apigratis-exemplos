@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard de consumo — APIBrasil</title>
+    <link rel="stylesheet" href="../_comum/app.css">
+    <style>
+        body { --largura: 68rem; }
+
+        /* Gráfico de barras em CSS puro — sem biblioteca. */
+        .grafico {
+            display: grid;
+            grid-auto-flow: column;
+            grid-auto-columns: 1fr;
+            align-items: end;
+            gap: 2px;
+            height: 11rem;
+            padding: 0;
+            margin: 1rem 0 0;
+            list-style: none;
+            border-bottom: 1px solid var(--borda);
+        }
+        .grafico li {
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            height: 100%;
+        }
+        .grafico .barra {
+            width: 100%;
+            min-height: 2px;
+            background: var(--acento);
+            border-radius: 2px 2px 0 0;
+            transition: opacity .15s;
+        }
+        .grafico li:hover .barra { opacity: .7; }
+        .grafico .barra.erro { background: var(--erro); }
+
+        .eixo {
+            display: flex;
+            justify-content: space-between;
+            color: var(--sutil);
+            font-size: .75rem;
+            margin-top: .375rem;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Dashboard de consumo</h1>
+<p class="sutil">Saldo, plano, uso diário e erros. Leitura pura — não gasta nada.</p>
+
+<div class="acoes">
+    <button type="button" class="primario" id="recarregar">Recarregar</button>
+    <label style="display:flex;gap:.5rem;align-items:center">
+        Período
+        <select id="dias">
+            <option value="7">7 dias</option>
+            <option value="15">15 dias</option>
+            <option value="30" selected>30 dias</option>
+            <option value="60">60 dias</option>
+            <option value="90">90 dias</option>
+        </select>
+    </label>
+</div>
+
+<div id="mensagem" class="mensagem" hidden></div>
+
+<div class="numeros" id="numeros">
+    <div class="numero"><div class="valor" id="saldo">—</div><div class="rotulo">Saldo</div></div>
+    <div class="numero"><div class="valor" id="plano">—</div><div class="rotulo">Plano</div></div>
+    <div class="numero"><div class="valor" id="requisicoes">—</div><div class="rotulo">Requisições no período</div></div>
+    <div class="numero"><div class="valor" id="taxa-erro">—</div><div class="rotulo">Taxa de erro</div></div>
+    <div class="numero"><div class="valor" id="total-devices">—</div><div class="rotulo">Devices</div></div>
+</div>
+
+<section class="cartao">
+    <h2>Uso diário</h2>
+    <ul class="grafico" id="grafico"></ul>
+    <div class="eixo"><span id="eixo-inicio">—</span><span id="eixo-fim">—</span></div>
+    <p class="sutil pequeno" id="legenda-grafico"></p>
+</section>
+
+<h2>Erros por status</h2>
+<div class="rolagem">
+    <table id="tabela-erros" hidden>
+        <thead><tr></tr></thead>
+        <tbody></tbody>
+    </table>
+</div>
+<p class="sutil pequeno" id="sem-erros" hidden>Nenhum erro no período. </p>
+
+<h2>Consumo por device</h2>
+<div class="rolagem">
+    <table id="tabela-devices" hidden>
+        <thead><tr></tr></thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<h2>Requisições recentes</h2>
+<div class="rolagem">
+    <table id="tabela-recentes" hidden>
+        <thead><tr></tr></thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<div class="acoes">
+    <button type="button" id="exportar">Exportar uso diário (CSV)</button>
+</div>
+
+<details hidden>
+    <summary>Respostas completas do gateway</summary>
+    <pre id="json"></pre>
+</details>
+
+<footer>
+    Todas as rotas aqui são <code>GET</code> de plataforma: sem DeviceToken e sem
+    custo por consulta. É onde você descobre <em>onde</em> o saldo está indo.
+</footer>
+
+<script type="module">
+    import { chamar, avisar, limparAviso, ocupado, tabela, primeiraLista, exportarCsv, moeda }
+        from '../_comum/app.js';
+
+    /** Nomes de campo variam entre as rotas de relatório. */
+    const pegar = (objeto, ...chaves) => {
+        for (const chave of chaves) {
+            const valor = objeto?.[chave];
+            if (valor !== undefined && valor !== null && valor !== '') return valor;
+        }
+        return null;
+    };
+
+    /** Vai fundo procurando uma chave, em respostas aninhadas. */
+    function buscarFundo(objeto, ...chaves) {
+        const direto = pegar(objeto, ...chaves);
+        if (direto !== null) return direto;
+
+        for (const valor of Object.values(objeto ?? {})) {
+            if (valor && typeof valor === 'object' && !Array.isArray(valor)) {
+                const achado = buscarFundo(valor, ...chaves);
+                if (achado !== null) return achado;
+            }
+        }
+
+        return null;
+    }
+
+    let usoDiario = [];
+
+    /** Gráfico de barras em CSS — nenhuma biblioteca envolvida. */
+    function desenharGrafico(pontos) {
+        const alvo = document.getElementById('grafico');
+        alvo.replaceChildren();
+
+        if (pontos.length === 0) {
+            document.getElementById('legenda-grafico').textContent = 'Sem dados no período.';
+            return;
+        }
+
+        const maximo = Math.max(...pontos.map((p) => p.total), 1);
+
+        for (const ponto of pontos) {
+            const li = document.createElement('li');
+            const barra = document.createElement('div');
+
+            barra.className = 'barra';
+            // Altura proporcional ao maior valor do período.
+            barra.style.height = `${Math.max((ponto.total / maximo) * 100, 1)}%`;
+            barra.title = `${ponto.data}: ${ponto.total} requisição(ões)`;
+
+            li.append(barra);
+            alvo.append(li);
+        }
+
+        document.getElementById('eixo-inicio').textContent = pontos[0].data;
+        document.getElementById('eixo-fim').textContent = pontos.at(-1).data;
+        document.getElementById('legenda-grafico').textContent =
+            `Pico de ${maximo} requisições em um dia. Passe o mouse nas barras para o detalhe.`;
+    }
+
+    async function carregar() {
+        limparAviso();
+        const dias = document.getElementById('dias').value;
+
+        // Tudo em paralelo: são leituras independentes e nenhuma custa nada.
+        // allSettled porque algumas rotas dependem do plano — uma indisponível
+        // não deve zerar o dashboard.
+        const [saldo, plano, devices, rapido, diario, erros, porDevice, recentes] =
+            await Promise.allSettled([
+                chamar('saldo'),
+                chamar('plano'),
+                chamar('devices'),
+                chamar('rapido'),
+                chamar('diario', { dias }),
+                chamar('erros', { dias }),
+                chamar('por-device', { dias }),
+                chamar('recentes', { limite: 20 }),
+            ]);
+
+        const bruto = {};
+        const valorDe = (resultado, nome) => {
+            if (resultado.status !== 'fulfilled') return null;
+            bruto[nome] = resultado.value;
+            return resultado.value;
+        };
+
+        // -------------------------------------------------------------------
+        // Números do topo
+        // -------------------------------------------------------------------
+        const dadosSaldo = valorDe(saldo, 'saldo');
+        const valorSaldo = buscarFundo(dadosSaldo, 'balance', 'saldo', 'credits', 'value');
+        document.getElementById('saldo').textContent =
+            valorSaldo === null ? '—' : moeda(valorSaldo);
+
+        const dadosPlano = valorDe(plano, 'plano');
+        document.getElementById('plano').textContent =
+            buscarFundo(dadosPlano, 'name', 'nome', 'plan_name', 'title') ?? '—';
+
+        const dadosDevices = valorDe(devices, 'devices');
+        const listaDevices = Array.isArray(dadosDevices)
+            ? dadosDevices
+            : (dadosDevices?.devices ?? []);
+        document.getElementById('total-devices').textContent = String(listaDevices.length || '—');
+
+        const dadosRapido = valorDe(rapido, 'quick-stats');
+        const totalReq = buscarFundo(dadosRapido, 'total_requests', 'total', 'requests');
+        document.getElementById('requisicoes').textContent =
+            totalReq === null ? '—' : Number(totalReq).toLocaleString('pt-BR');
+
+        const taxa = buscarFundo(dadosRapido, 'error_rate', 'taxa_erro', 'errors_percent');
+        document.getElementById('taxa-erro').textContent =
+            taxa === null ? '—' : `${Number(taxa).toFixed(1)}%`;
+
+        // -------------------------------------------------------------------
+        // Uso diário
+        // -------------------------------------------------------------------
+        const dadosDiario = valorDe(diario, 'daily-usage');
+        const pontos = (primeiraLista(dadosDiario) ?? []).map((item) => ({
+            data: String(pegar(item, 'date', 'data', 'day') ?? '').slice(0, 10),
+            total: Number(pegar(item, 'total', 'requests', 'count', 'quantidade') ?? 0),
+        }));
+
+        usoDiario = pontos;
+        desenharGrafico(pontos);
+
+        // -------------------------------------------------------------------
+        // Tabelas
+        // -------------------------------------------------------------------
+        const dadosErros = valorDe(erros, 'error-analysis');
+        const listaErros = primeiraLista(dadosErros) ?? [];
+
+        if (listaErros.length > 0) {
+            tabela('#tabela-erros', listaErros);
+            document.getElementById('sem-erros').hidden = true;
+        } else {
+            document.getElementById('tabela-erros').hidden = true;
+            document.getElementById('sem-erros').hidden = false;
+        }
+
+        tabela('#tabela-devices', primeiraLista(valorDe(porDevice, 'device-analysis')) ?? []);
+        tabela('#tabela-recentes', primeiraLista(valorDe(recentes, 'recent-requests')) ?? []);
+
+        // -------------------------------------------------------------------
+        // Relatórios que a conta não tem
+        // -------------------------------------------------------------------
+        const falhas = [
+            ['saldo', saldo], ['plano', plano], ['devices', devices],
+            ['quick-stats', rapido], ['daily-usage', diario],
+            ['error-analysis', erros], ['device-analysis', porDevice],
+            ['recent-requests', recentes],
+        ].filter(([, resultado]) => resultado.status === 'rejected');
+
+        if (falhas.length > 0) {
+            avisar(
+                `Indisponível para esta conta: ${falhas.map(([nome]) => nome).join(', ')}. ` +
+                'Alguns relatórios exigem plano ativo.',
+                'alerta'
+            );
+        }
+
+        document.getElementById('json').textContent = JSON.stringify(bruto, null, 2);
+        document.querySelector('details').hidden = false;
+    }
+
+    document.getElementById('recarregar').addEventListener('click', (evento) =>
+        ocupado(evento.currentTarget, carregar)
+    );
+    document.getElementById('dias').addEventListener('change', carregar);
+
+    document.getElementById('exportar').addEventListener('click', () => {
+        exportarCsv('uso-diario.csv', ['data', 'total'], usoDiario);
+    });
+
+    carregar();
+</script>
+
+</body>
+</html>

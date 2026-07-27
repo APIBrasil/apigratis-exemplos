@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Feriados — APIBrasil</title>
+    <link rel="stylesheet" href="../_comum/app.css">
+    <style>
+        .meses {
+            display: grid;
+            gap: 1rem;
+            grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+            margin: 1.5rem 0;
+        }
+        .mes h3 {
+            margin: 0 0 .5rem;
+            font-size: .875rem;
+            text-transform: uppercase;
+            letter-spacing: .03em;
+            color: var(--sutil);
+        }
+        .mes ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .375rem; }
+        .mes li { display: flex; gap: .5rem; align-items: baseline; font-size: .9375rem; }
+        .mes .dia {
+            font-variant-numeric: tabular-nums;
+            font-weight: 600;
+            min-width: 1.75rem;
+        }
+        .mes.vazio { opacity: .45; }
+    </style>
+</head>
+<body>
+
+<h1>Feriados</h1>
+<p class="sutil">Calendário do ano, agrupado por mês. O token fica no servidor.</p>
+
+<form class="linha" id="formulario">
+    <label>
+        Ano
+        <input id="ano" class="numerico" inputmode="numeric" maxlength="4" required>
+    </label>
+    <label>
+        Tipo
+        <select id="tipo">
+            <option value="nacional">Nacionais</option>
+            <option value="estadual">Estaduais</option>
+            <option value="facultativo">Pontos facultativos</option>
+        </select>
+    </label>
+    <label id="campo-uf" hidden>
+        UF
+        <select id="uf"></select>
+    </label>
+    <button type="submit" class="primario">Consultar</button>
+</form>
+
+<div id="mensagem" class="mensagem" hidden></div>
+
+<section id="resultado" hidden>
+    <div class="numeros">
+        <div class="numero">
+            <div class="valor" id="total">—</div>
+            <div class="rotulo">Feriados no ano</div>
+        </div>
+        <div class="numero">
+            <div class="valor" id="uteis">—</div>
+            <div class="rotulo">Em dia útil (seg–sex)</div>
+        </div>
+        <div class="numero">
+            <div class="valor" id="emendas">—</div>
+            <div class="rotulo">Emendas possíveis (ter/qui)</div>
+        </div>
+    </div>
+
+    <div class="meses" id="meses"></div>
+
+    <div class="acoes">
+        <button type="button" id="exportar">Exportar CSV</button>
+    </div>
+
+    <details hidden>
+        <summary>Resposta completa do gateway</summary>
+        <pre id="json"></pre>
+    </details>
+</section>
+
+<footer>
+    A action é <code>/holidays/feriados</code> — em português. Não existe
+    <code>/holidays/holidays</code>.
+</footer>
+
+<script type="module">
+    import { chamar, conteudo, avisar, limparAviso, ocupado, primeiraLista, exportarCsv, mostrarJson }
+        from '../_comum/app.js';
+
+    const MESES = [
+        'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+        'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro',
+    ];
+    const SEMANA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+    const UFS = [
+        'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS',
+        'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC',
+        'SP', 'SE', 'TO',
+    ];
+
+    document.getElementById('ano').value = String(new Date().getFullYear());
+
+    const selUf = document.getElementById('uf');
+    for (const uf of UFS) selUf.append(new Option(uf, uf));
+    selUf.value = 'SP';
+
+    // Feriado estadual precisa da UF — o campo só aparece nesse caso.
+    const selTipo = document.getElementById('tipo');
+    selTipo.addEventListener('change', () => {
+        document.getElementById('campo-uf').hidden = selTipo.value !== 'estadual';
+    });
+
+    let ultimos = [];
+
+    /** Nomes de campo variam por provedor. */
+    const pegar = (objeto, ...chaves) => {
+        for (const chave of chaves) {
+            const valor = objeto?.[chave];
+            if (valor !== undefined && valor !== null && valor !== '') return valor;
+        }
+        return null;
+    };
+
+    /**
+     * Converte a data do provedor em Date.
+     * Aceita 2026-04-21 e 21/04/2026.
+     */
+    function paraData(valor, ano) {
+        if (!valor) return null;
+
+        const texto = String(valor).trim();
+
+        const iso = texto.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+
+        const br = texto.match(/^(\d{2})\/(\d{2})(?:\/(\d{4}))?/);
+        if (br) return new Date(Number(br[3] ?? ano), Number(br[2]) - 1, Number(br[1]));
+
+        const data = new Date(texto);
+        return Number.isNaN(data.getTime()) ? null : data;
+    }
+
+    function montar(feriados, ano) {
+        const alvo = document.getElementById('meses');
+        alvo.replaceChildren();
+
+        // Agrupa por mês, mantendo os 12 mesmo vazios — o calendário fica
+        // legível e mostra os meses sem feriado.
+        const porMes = Array.from({ length: 12 }, () => []);
+        let emDiaUtil = 0;
+        let emendas = 0;
+
+        for (const feriado of feriados) {
+            const data = paraData(pegar(feriado, 'date', 'data', 'day'), ano);
+            const nome = pegar(feriado, 'name', 'nome', 'descricao', 'title') ?? 'Feriado';
+
+            if (!data) continue;
+
+            const diaSemana = data.getDay();
+            if (diaSemana >= 1 && diaSemana <= 5) emDiaUtil++;
+            // Terça e quinta permitem emendar com o fim de semana.
+            if (diaSemana === 2 || diaSemana === 4) emendas++;
+
+            porMes[data.getMonth()].push({ data, nome, diaSemana });
+        }
+
+        for (const [indice, lista] of porMes.entries()) {
+            const caixa = document.createElement('div');
+            caixa.className = `mes cartao ${lista.length === 0 ? 'vazio' : ''}`.trim();
+
+            const titulo = document.createElement('h3');
+            titulo.textContent = MESES[indice];
+            caixa.append(titulo);
+
+            const ul = document.createElement('ul');
+
+            if (lista.length === 0) {
+                const li = document.createElement('li');
+                li.className = 'sutil pequeno';
+                li.textContent = 'sem feriados';
+                ul.append(li);
+            }
+
+            for (const item of lista.sort((a, b) => a.data - b.data)) {
+                const li = document.createElement('li');
+
+                const dia = document.createElement('span');
+                dia.className = 'dia';
+                dia.textContent = String(item.data.getDate()).padStart(2, '0');
+
+                const nome = document.createElement('span');
+                nome.textContent = item.nome;
+
+                const semana = document.createElement('span');
+                semana.className = 'sutil pequeno';
+                semana.textContent = SEMANA[item.diaSemana].slice(0, 3);
+
+                li.append(dia, nome, semana);
+                ul.append(li);
+            }
+
+            caixa.append(ul);
+            alvo.append(caixa);
+        }
+
+        document.getElementById('total').textContent = String(feriados.length);
+        document.getElementById('uteis').textContent = String(emDiaUtil);
+        document.getElementById('emendas').textContent = String(emendas);
+
+        return porMes.flat().map((item) => ({
+            data: item.data.toLocaleDateString('pt-BR'),
+            feriado: item.nome,
+            dia_da_semana: SEMANA[item.diaSemana],
+        }));
+    }
+
+    document.getElementById('formulario').addEventListener('submit', (evento) => {
+        evento.preventDefault();
+        const botao = evento.target.querySelector('button[type=submit]');
+
+        ocupado(botao, async () => {
+            limparAviso();
+            document.getElementById('resultado').hidden = true;
+
+            const ano = Number(document.getElementById('ano').value);
+
+            try {
+                const resposta = await chamar('feriados', {
+                    ano,
+                    tipo: selTipo.value,
+                    uf: selUf.value,
+                });
+
+                const dados = conteudo(resposta);
+                const feriados = Array.isArray(dados) ? dados : (primeiraLista(dados) ?? []);
+
+                if (feriados.length === 0) {
+                    avisar('Nenhum feriado retornado para esse filtro.', 'alerta');
+                    return;
+                }
+
+                ultimos = montar(feriados, ano);
+                mostrarJson(resposta);
+                document.getElementById('resultado').hidden = false;
+            } catch (erro) {
+                avisar(erro.message);
+            }
+        });
+    });
+
+    document.getElementById('exportar').addEventListener('click', () => {
+        const ano = document.getElementById('ano').value;
+        exportarCsv(
+            `feriados-${selTipo.value}-${ano}.csv`,
+            ['data', 'feriado', 'dia_da_semana'],
+            ultimos
+        );
+    });
+
+    document.getElementById('formulario').requestSubmit();
+</script>
+
+</body>
+</html>

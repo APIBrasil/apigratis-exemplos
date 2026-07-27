@@ -1,0 +1,17 @@
+{
+  "name": "apibrasil-exemplos-mcp-nodejs",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Client MCP da APIBrasil em Node.js",
+  "scripts": {
+    "start": "node --env-file=../../.env app.mjs",
+    "descoberta": "node --env-file=../../.env descoberta.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

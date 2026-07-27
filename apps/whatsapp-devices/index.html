@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Devices WhatsApp — APIBrasil</title>
+    <link rel="stylesheet" href="../_comum/app.css">
+    <style>body { --largura: 68rem; }</style>
+</head>
+<body>
+
+<h1>Devices WhatsApp</h1>
+<p class="sutil">Status das sessões e QR Code para parear. O token fica no servidor.</p>
+
+<div class="acoes">
+    <button type="button" class="primario" id="recarregar">Recarregar</button>
+    <button type="button" id="status-todos">Verificar todos</button>
+</div>
+
+<div id="mensagem" class="mensagem" hidden></div>
+
+<div class="rolagem">
+    <table>
+        <thead>
+            <tr>
+                <th>Device</th>
+                <th>API</th>
+                <th>Token</th>
+                <th>Sessão</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody id="corpo">
+            <tr><td colspan="5" class="carregando">Carregando…</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<dialog id="modal">
+    <h2>QR Code</h2>
+    <div class="corpo-modal"></div>
+    <div class="acoes"><button type="button" id="fechar">Fechar</button></div>
+</dialog>
+
+<footer>
+    <strong>Device</strong> é o registro na conta; <strong>sessão</strong> é a
+    conexão viva com o WhatsApp. Um device pode existir com a sessão caída — é o
+    caso mais comum de "paramos de receber mensagens".
+</footer>
+
+<script type="module">
+    import { chamar, conteudo, avisar, limparAviso, ocupado, mostrarQrCode }
+        from '../_comum/app.js';
+
+    const corpo = document.getElementById('corpo');
+
+    /** Linha única de aviso dentro da tabela. */
+    function linhaAviso(texto) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 5;
+        td.className = 'carregando';
+        td.textContent = texto;
+        tr.append(td);
+        return tr;
+    }
+
+    function celula(texto) {
+        const td = document.createElement('td');
+        td.textContent = texto ?? '—';
+        return td;
+    }
+
+    function botao(rotulo, className, aoClicar) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = `miudo ${className ?? ''}`.trim();
+        b.textContent = rotulo;
+        b.addEventListener('click', () => ocupado(b, () => aoClicar()));
+        return b;
+    }
+
+    /** Consulta o status e pinta o selo na célula da linha. */
+    async function verificarStatus(token, celulaSessao) {
+        try {
+            const dados = conteudo(await chamar('status', { deviceToken: token }));
+            const conectado = dados?.state === 'CONNECTED' || dados?.connected === true;
+
+            const selo = document.createElement('span');
+            selo.className = `selo ${conectado ? 'ok' : ''}`;
+            selo.textContent = dados?.state ?? (conectado ? 'conectado' : 'desconectado');
+            celulaSessao.replaceChildren(selo);
+        } catch (erro) {
+            const selo = document.createElement('span');
+            selo.className = 'selo erro';
+            selo.textContent = 'erro';
+            selo.title = erro.message;
+            celulaSessao.replaceChildren(selo);
+        }
+    }
+
+    // Guardado para o botão "Verificar todos".
+    let linhas = [];
+
+    async function carregar() {
+        limparAviso();
+        corpo.replaceChildren(linhaAviso('Carregando…'));
+        linhas = [];
+
+        try {
+            const resposta = await chamar('listar');
+
+            // GET /devices devolve a lista direta ou dentro de `devices`,
+            // dependendo do plano — aceitamos os dois formatos.
+            const devices = Array.isArray(resposta) ? resposta : (resposta.devices ?? []);
+
+            if (devices.length === 0) {
+                corpo.replaceChildren(linhaAviso('Nenhum device na conta. Crie um no painel.'));
+                return;
+            }
+
+            corpo.replaceChildren();
+
+            for (const device of devices) {
+                const token = device.device_token ?? device.search ?? '';
+                const nome = device.device_name ?? '—';
+                const tr = document.createElement('tr');
+
+                tr.append(celula(nome), celula(device.api?.name ?? device.api_name));
+
+                // Token abreviado; o valor completo fica no title.
+                const tdToken = document.createElement('td');
+                const codigo = document.createElement('code');
+                codigo.textContent = token ? `${token.slice(0, 8)}…` : '—';
+                codigo.title = token;
+                tdToken.append(codigo);
+                tr.append(tdToken);
+
+                const tdSessao = celula('—');
+                tr.append(tdSessao);
+
+                const tdAcoes = document.createElement('td');
+                const acoes = document.createElement('div');
+                acoes.className = 'acoes';
+                acoes.style.margin = '0';
+
+                acoes.append(
+                    botao('Status', null, () => verificarStatus(token, tdSessao)),
+
+                    botao('QR Code', null, async () => {
+                        try {
+                            // start registra os webhooks e prepara a sessão;
+                            // qrcode devolve a imagem para parear.
+                            await chamar('iniciar', { deviceToken: token });
+                            const qr = await chamar('qrcode', { deviceToken: token });
+
+                            mostrarQrCode(`QR Code — ${nome}`, conteudo(qr)?.qrcode, qr);
+                        } catch (erro) {
+                            avisar(erro.message);
+                        }
+                    }),
+
+                    botao('Encerrar', 'perigo', async () => {
+                        if (!confirm(`Encerrar a sessão de "${nome}"?`)) return;
+
+                        try {
+                            await chamar('encerrar', { deviceToken: token });
+                            tdSessao.textContent = 'encerrada';
+                        } catch (erro) {
+                            avisar(erro.message);
+                        }
+                    })
+                );
+
+                tdAcoes.append(acoes);
+                tr.append(tdAcoes);
+                corpo.append(tr);
+
+                linhas.push({ token, celulaSessao: tdSessao });
+            }
+        } catch (erro) {
+            corpo.replaceChildren(linhaAviso('Não foi possível carregar.'));
+            avisar(erro.message);
+        }
+    }
+
+    document.getElementById('recarregar').addEventListener('click', (e) =>
+        ocupado(e.currentTarget, carregar)
+    );
+
+    document.getElementById('status-todos').addEventListener('click', (e) =>
+        ocupado(e.currentTarget, () =>
+            // Uma chamada por device, todas em paralelo.
+            Promise.all(linhas.map(({ token, celulaSessao }) => verificarStatus(token, celulaSessao)))
+        )
+    );
+
+    document.getElementById('fechar').addEventListener('click', () =>
+        document.getElementById('modal').close()
+    );
+
+    carregar();
+</script>
+
+</body>
+</html>

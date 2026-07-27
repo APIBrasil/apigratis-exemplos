@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Consulta de placa — APIBrasil</title>
+    <link rel="stylesheet" href="../_comum/app.css">
+</head>
+<body>
+
+<h1>Consulta de placa</h1>
+<p class="sutil">Dados do veículo e valor FIPE. O token fica no servidor.</p>
+
+<form class="linha" id="formulario">
+    <label class="cresce">
+        Placa
+        <input id="placa" class="maiuscula" placeholder="ABC1234 ou ABC1D23"
+               value="ABC1234" maxlength="8" autocomplete="off" required>
+    </label>
+    <button type="submit" class="primario">Consultar</button>
+</form>
+
+<div id="mensagem" class="mensagem" hidden></div>
+
+<div class="cartoes">
+    <div class="cartao" id="cartao-dados" hidden>
+        <h2>Veículo</h2>
+        <dl id="lista-dados"></dl>
+    </div>
+    <div class="cartao" id="cartao-fipe" hidden>
+        <h2>FIPE</h2>
+        <dl id="lista-fipe"></dl>
+    </div>
+</div>
+
+<details hidden>
+    <summary>Resposta completa do gateway</summary>
+    <pre id="json"></pre>
+</details>
+
+<footer>
+    As duas consultas rodam em paralelo — a FIPE falhar não esconde os dados do
+    veículo. Documentação: <a href="https://doc.apibrasil.io">doc.apibrasil.io</a>
+</footer>
+
+<script type="module">
+    import { chamar, conteudo, avisar, limparAviso, ocupado, definicoes, mostrarJson }
+        from '../_comum/app.js';
+
+    const formulario = document.getElementById('formulario');
+    const botao = formulario.querySelector('button[type=submit]');
+
+    formulario.addEventListener('submit', (evento) => {
+        evento.preventDefault();
+
+        ocupado(botao, async () => {
+            const placa = document.getElementById('placa').value.trim().toUpperCase();
+
+            limparAviso();
+            document.getElementById('cartao-dados').hidden = true;
+            document.getElementById('cartao-fipe').hidden = true;
+
+            // As duas consultas são independentes: allSettled para que uma
+            // falhar não esconda o resultado da outra.
+            const [dados, fipe] = await Promise.allSettled([
+                chamar('dados', { placa }),
+                chamar('fipe', { placa }),
+            ]);
+
+            if (dados.status === 'fulfilled') {
+                const alvo = conteudo(dados.value);
+                const escritos = definicoes('#lista-dados', alvo?.veiculo ?? alvo);
+                document.getElementById('cartao-dados').hidden = escritos === 0;
+                mostrarJson(dados.value);
+            }
+
+            if (fipe.status === 'fulfilled') {
+                const alvo = conteudo(fipe.value);
+                const primeiro = Array.isArray(alvo?.fipe) ? alvo.fipe[0] : alvo;
+                const escritos = definicoes('#lista-fipe', primeiro);
+                document.getElementById('cartao-fipe').hidden = escritos === 0;
+            }
+
+            if (dados.status === 'rejected' && fipe.status === 'rejected') {
+                avisar(dados.reason.message);
+            } else if (dados.status === 'rejected' || fipe.status === 'rejected') {
+                const falha = dados.status === 'rejected' ? dados.reason : fipe.reason;
+                avisar(`Resultado parcial: ${falha.message}`, 'alerta');
+            }
+        });
+    });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "name": "apibrasil-exemplos-nodejs",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Exemplos da SDK oficial Node.js da APIBrasil",
+  "scripts": {
+    "01": "node --env-file=../../.env 01-conta-e-saldo.mjs",
+    "02": "node --env-file=../../.env 02-consultas-por-credito.mjs",
+    "03": "node --env-file=../../.env 03-whatsapp.mjs",
+    "04": "node --env-file=../../.env 04-servicos-device.mjs",
+    "05": "node --env-file=../../.env 05-erros-e-retry.mjs"
+  },
+  "dependencies": {
+    "apigratis-sdk-nodejs": "^0.1.8"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

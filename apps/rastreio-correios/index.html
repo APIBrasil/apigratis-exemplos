@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Rastreio de encomendas — APIBrasil</title>
+    <link rel="stylesheet" href="../_comum/app.css">
+</head>
+<body>
+
+<h1>Rastreio de encomendas</h1>
+<p class="sutil">Histórico dos Correios em linha do tempo. O token fica no servidor.</p>
+
+<form class="linha" id="formulario">
+    <label class="cresce">
+        Código de rastreio
+        <input id="codigo" class="maiuscula" placeholder="AA123456789BR"
+               value="AA123456789BR" maxlength="13" autocomplete="off" required>
+    </label>
+    <label>
+        Cobrança
+        <select id="modo">
+            <option value="device">Device (plano)</option>
+            <option value="credito">Crédito (saldo)</option>
+        </select>
+    </label>
+    <button type="submit" class="primario">Rastrear</button>
+</form>
+
+<div id="mensagem" class="mensagem" hidden></div>
+
+<section id="resultado" hidden>
+    <div class="cartao">
+        <h2 id="titulo-encomenda">Encomenda</h2>
+        <dl id="resumo"></dl>
+    </div>
+
+    <h2>Movimentações</h2>
+    <ol class="linha-tempo" id="eventos"></ol>
+
+    <details hidden>
+        <summary>Resposta completa do gateway</summary>
+        <pre id="json"></pre>
+    </details>
+</section>
+
+<footer>
+    A mesma informação existe em duas rotas:
+    <code>/correios/rastreio</code> (device, cobra por plano) e
+    <code>/consulta/rastreio/credits</code> (debita saldo). O select acima troca
+    entre elas sem mudar mais nada.
+</footer>
+
+<script type="module">
+    import { chamar, conteudo, cobranca, avisar, limparAviso, ocupado, definicoes, mostrarJson, dataHora, moeda }
+        from '../_comum/app.js';
+
+    const formulario = document.getElementById('formulario');
+    const botao = formulario.querySelector('button[type=submit]');
+    const resultado = document.getElementById('resultado');
+
+    /** Nomes de campo variam por provedor — pega o primeiro que existir. */
+    const pegar = (objeto, ...chaves) => {
+        for (const chave of chaves) {
+            const valor = objeto?.[chave];
+            if (valor !== undefined && valor !== null && valor !== '') return valor;
+        }
+        return null;
+    };
+
+    /** Acha a lista de movimentações, qualquer que seja o nome do campo. */
+    function movimentacoes(dados) {
+        const candidatos = [
+            dados?.eventos, dados?.events, dados?.historico, dados?.tracks,
+            dados?.objetos?.[0]?.evento, dados?.rastreio,
+        ];
+
+        for (const lista of candidatos) {
+            if (Array.isArray(lista) && lista.length > 0) return lista;
+        }
+
+        // Alguns provedores devolvem a lista na raiz.
+        return Array.isArray(dados) ? dados : [];
+    }
+
+    function montarLinhaTempo(eventos) {
+        const alvo = document.getElementById('eventos');
+        alvo.replaceChildren();
+
+        for (const evento of eventos) {
+            const li = document.createElement('li');
+
+            const quando = document.createElement('div');
+            quando.className = 'quando';
+            const data = pegar(evento, 'data', 'date', 'dtHrCriado', 'datahora');
+            const hora = pegar(evento, 'hora', 'time');
+            quando.textContent = hora ? `${data} ${hora}` : dataHora(data);
+
+            const oque = document.createElement('div');
+            oque.className = 'oque';
+            oque.textContent =
+                pegar(evento, 'status', 'descricao', 'description', 'situacao') ?? '—';
+
+            const onde = document.createElement('div');
+            onde.className = 'sutil pequeno';
+            const local = pegar(evento, 'local', 'origem', 'unidade', 'location', 'cidade');
+            const destino = pegar(evento, 'destino', 'unidadeDestino');
+            onde.textContent = [local, destino && `→ ${destino}`].filter(Boolean).join(' ');
+
+            li.append(quando, oque);
+            if (onde.textContent) li.append(onde);
+            alvo.append(li);
+        }
+
+        return eventos.length;
+    }
+
+    formulario.addEventListener('submit', (evento) => {
+        evento.preventDefault();
+
+        ocupado(botao, async () => {
+            limparAviso();
+            resultado.hidden = true;
+
+            const codigo = document.getElementById('codigo').value.trim().toUpperCase();
+            const modo = document.getElementById('modo').value;
+
+            try {
+                const resposta = await chamar(modo, { codigo });
+                const dados = conteudo(resposta);
+
+                document.getElementById('titulo-encomenda').textContent = `Encomenda ${codigo}`;
+
+                // Campos de resumo, quando o provedor devolve.
+                definicoes('#resumo', {
+                    codigo,
+                    servico: pegar(dados, 'servico', 'tipoPostal', 'service'),
+                    situacao: pegar(dados, 'situacao', 'status', 'ultimo_status'),
+                    entregue: pegar(dados, 'entregue', 'delivered'),
+                });
+
+                const eventos = movimentacoes(dados);
+
+                if (montarLinhaTempo(eventos) === 0) {
+                    avisar(
+                        'Sem movimentações. Objetos recém-postados podem levar horas para aparecer.',
+                        'alerta'
+                    );
+                }
+
+                // Se veio pela rota de crédito, mostra o custo.
+                const custo = cobranca(resposta);
+                if (custo && !custo.homolog) {
+                    avisar(
+                        `Custo: ${moeda(custo.custo)} · saldo restante: ${moeda(custo.saldo)}`,
+                        'ok'
+                    );
+                }
+
+                mostrarJson(resposta);
+                resultado.hidden = false;
+            } catch (erro) {
+                avisar(erro.message);
+            }
+        });
+    });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tabela FIPE — APIBrasil</title>
+    <link rel="stylesheet" href="../_comum/app.css">
+</head>
+<body>
+
+<h1>Tabela FIPE</h1>
+<p class="sutil">
+    Cinco níveis em cascata: referência → tipo → marca → modelo → ano → preço.
+</p>
+
+<form class="grade" id="formulario">
+    <label>
+        Referência
+        <select id="referencia"><option value="">Carregando…</option></select>
+    </label>
+    <label>
+        Tipo
+        <select id="tipo">
+            <option value="1">Carro</option>
+            <option value="2">Moto</option>
+            <option value="3">Caminhão</option>
+        </select>
+    </label>
+    <label>
+        Marca
+        <select id="marca" disabled><option value="">—</option></select>
+    </label>
+    <label>
+        Modelo
+        <select id="modelo" disabled><option value="">—</option></select>
+    </label>
+    <label>
+        Ano
+        <select id="ano" disabled><option value="">—</option></select>
+    </label>
+</form>
+
+<div id="mensagem" class="mensagem" hidden></div>
+
+<div class="numeros" id="destaque" hidden>
+    <div class="numero">
+        <div class="valor" id="preco">—</div>
+        <div class="rotulo">Preço médio FIPE</div>
+    </div>
+</div>
+
+<div class="cartao" id="cartao-detalhe" hidden>
+    <h2>Detalhes</h2>
+    <dl id="detalhe"></dl>
+</div>
+
+<details hidden>
+    <summary>Resposta completa do gateway</summary>
+    <pre id="json"></pre>
+</details>
+
+<footer>
+    As actions da FIPE são <strong>PascalCase</strong>:
+    <code>ConsultarMarcas</code>, não <code>consultarMarcas</code>. O gateway
+    repassa a action verbatim ao provedor, então o case errado dá 404 lá em cima.
+</footer>
+
+<script type="module">
+    import { chamar, conteudo, avisar, limparAviso, definicoes, opcoes, mostrarJson, moeda }
+        from '../_comum/app.js';
+
+    const selReferencia = document.getElementById('referencia');
+    const selTipo = document.getElementById('tipo');
+    const selMarca = document.getElementById('marca');
+    const selModelo = document.getElementById('modelo');
+    const selAno = document.getElementById('ano');
+
+    /** Extrai a lista de itens da resposta, qualquer que seja o formato. */
+    function lista(resposta) {
+        const dados = conteudo(resposta);
+        if (Array.isArray(dados)) return dados;
+
+        for (const valor of Object.values(dados ?? {})) {
+            if (Array.isArray(valor)) return valor;
+        }
+        return [];
+    }
+
+    /** Limpa os selects abaixo do nível que mudou. */
+    function limparAbaixo(...selects) {
+        for (const select of selects) {
+            opcoes(select, [], { vazio: '—' });
+        }
+        document.getElementById('destaque').hidden = true;
+        document.getElementById('cartao-detalhe').hidden = true;
+    }
+
+    /** Estado atual dos cinco níveis. */
+    const escolhas = () => ({
+        referencia: selReferencia.value,
+        tipo: selTipo.value,
+        marca: selMarca.value,
+        modelo: selModelo.value,
+    });
+
+    // -----------------------------------------------------------------------
+    // 1. Referências (mês/ano da tabela)
+    // -----------------------------------------------------------------------
+    try {
+        const itens = lista(await chamar('referencias'));
+
+        opcoes(selReferencia, itens, {
+            valor: (item) => item.Codigo ?? item.codigo,
+            rotulo: (item) => item.Mes ?? item.mes ?? item.Codigo,
+        });
+
+        // A referência mais recente é a primeira — já carrega as marcas dela.
+        if (itens.length) await carregarMarcas();
+    } catch (erro) {
+        opcoes(selReferencia, [], { vazio: 'indisponível' });
+        avisar(erro.message);
+    }
+
+    // -----------------------------------------------------------------------
+    // 2. Marcas
+    // -----------------------------------------------------------------------
+    async function carregarMarcas() {
+        limparAbaixo(selMarca, selModelo, selAno);
+        if (!selReferencia.value) return;
+
+        opcoes(selMarca, [], { vazio: 'carregando…' });
+
+        try {
+            const itens = lista(await chamar('marcas', escolhas()));
+            opcoes(selMarca, itens, {
+                valor: (item) => item.Value ?? item.codigo ?? item.value,
+                rotulo: (item) => item.Label ?? item.nome ?? item.label,
+                vazio: 'selecione',
+            });
+        } catch (erro) {
+            opcoes(selMarca, [], { vazio: 'erro' });
+            avisar(erro.message);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 3. Modelos
+    // -----------------------------------------------------------------------
+    async function carregarModelos() {
+        limparAbaixo(selModelo, selAno);
+        if (!selMarca.value) return;
+
+        opcoes(selModelo, [], { vazio: 'carregando…' });
+
+        try {
+            const resposta = await chamar('modelos', escolhas());
+            const dados = conteudo(resposta);
+
+            // Esta action devolve { Modelos: [...], Anos: [...] }.
+            const modelos = dados?.Modelos ?? dados?.modelos ?? lista(resposta);
+
+            opcoes(selModelo, modelos, {
+                valor: (item) => item.Value ?? item.codigo ?? item.value,
+                rotulo: (item) => item.Label ?? item.nome ?? item.label,
+                vazio: 'selecione',
+            });
+        } catch (erro) {
+            opcoes(selModelo, [], { vazio: 'erro' });
+            avisar(erro.message);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 4. Anos
+    // -----------------------------------------------------------------------
+    async function carregarAnos() {
+        limparAbaixo(selAno);
+        if (!selModelo.value) return;
+
+        opcoes(selAno, [], { vazio: 'carregando…' });
+
+        try {
+            const itens = lista(await chamar('anos', escolhas()));
+
+            // O código do ano vem como "2015-1": ano + tipo de combustível.
+            opcoes(selAno, itens, {
+                valor: (item) => item.Value ?? item.codigo ?? item.value,
+                rotulo: (item) => item.Label ?? item.nome ?? item.label,
+                vazio: 'selecione',
+            });
+        } catch (erro) {
+            opcoes(selAno, [], { vazio: 'erro' });
+            avisar(erro.message);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 5. Preço
+    // -----------------------------------------------------------------------
+    async function consultarValor() {
+        document.getElementById('destaque').hidden = true;
+        document.getElementById('cartao-detalhe').hidden = true;
+
+        if (!selAno.value) return;
+
+        // "2015-1" → anoModelo 2015, codigoTipoCombustivel 1.
+        const [ano, combustivel] = String(selAno.value).split('-');
+
+        if (!ano || !combustivel) {
+            avisar('Código de ano em formato inesperado — veja o JSON bruto.', 'alerta');
+            return;
+        }
+
+        limparAviso();
+
+        try {
+            const resposta = await chamar('valor', { ...escolhas(), ano, combustivel });
+            const dados = conteudo(resposta);
+
+            const preco = dados?.Valor ?? dados?.valor ?? dados?.preco;
+            document.getElementById('preco').textContent = preco ? moeda(preco) : '—';
+            document.getElementById('destaque').hidden = false;
+
+            definicoes('#detalhe', dados, {
+                Marca: 'Marca',
+                Modelo: 'Modelo',
+                AnoModelo: 'Ano do modelo',
+                Combustivel: 'Combustível',
+                CodigoFipe: 'Código FIPE',
+                MesReferencia: 'Mês de referência',
+                TipoVeiculo: 'Tipo de veículo',
+            });
+            document.getElementById('cartao-detalhe').hidden = false;
+
+            mostrarJson(resposta);
+        } catch (erro) {
+            avisar(erro.message);
+        }
+    }
+
+    selReferencia.addEventListener('change', carregarMarcas);
+    selTipo.addEventListener('change', carregarMarcas);
+    selMarca.addEventListener('change', carregarModelos);
+    selModelo.addEventListener('change', carregarAnos);
+    selAno.addEventListener('change', consultarValor);
+</script>
+
+</body>
+</html>

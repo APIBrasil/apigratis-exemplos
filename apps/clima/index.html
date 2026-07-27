@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Clima — APIBrasil</title>
+    <link rel="stylesheet" href="../_comum/app.css">
+</head>
+<body>
+
+<h1>Clima</h1>
+<p class="sutil">Por cidade ou por coordenadas, incluindo a sua localização.</p>
+
+<form class="linha" id="form-cidade">
+    <label class="cresce">
+        Cidade
+        <input id="cidade" value="São Paulo" placeholder="ex: Belo Horizonte" required>
+    </label>
+    <button type="submit" class="primario">Consultar</button>
+</form>
+
+<form class="linha" id="form-coordenadas">
+    <label>
+        Latitude
+        <input id="lat" class="numerico" inputmode="decimal" value="-23.5613" required>
+    </label>
+    <label>
+        Longitude
+        <input id="lng" class="numerico" inputmode="decimal" value="-46.6565" required>
+    </label>
+    <button type="submit">Consultar</button>
+    <button type="button" id="minha-posicao">Usar minha localização</button>
+</form>
+
+<div id="mensagem" class="mensagem" hidden></div>
+
+<section id="resultado" hidden>
+    <div class="numeros">
+        <div class="numero">
+            <div class="valor" id="temperatura">—</div>
+            <div class="rotulo" id="local">—</div>
+        </div>
+        <div class="numero">
+            <div class="valor" id="condicao">—</div>
+            <div class="rotulo">Condição</div>
+        </div>
+        <div class="numero">
+            <div class="valor" id="umidade">—</div>
+            <div class="rotulo">Umidade</div>
+        </div>
+        <div class="numero">
+            <div class="valor" id="vento">—</div>
+            <div class="rotulo">Vento</div>
+        </div>
+    </div>
+
+    <div class="cartao">
+        <h2>Todos os campos</h2>
+        <dl id="campos"></dl>
+    </div>
+
+    <details hidden>
+        <summary>Resposta completa do gateway</summary>
+        <pre id="json"></pre>
+    </details>
+</section>
+
+<footer>
+    A action de coordenadas se escreve <code>coordenates</code> no gateway — não
+    <code>coordinates</code>. É a grafia publicada no catálogo.
+</footer>
+
+<script type="module">
+    import { chamar, conteudo, avisar, limparAviso, ocupado, definicoes, mostrarJson }
+        from '../_comum/app.js';
+
+    const resultado = document.getElementById('resultado');
+
+    /** Nomes de campo variam por provedor — pega o primeiro que existir. */
+    const pegar = (objeto, ...chaves) => {
+        for (const chave of chaves) {
+            const valor = objeto?.[chave];
+            if (valor !== undefined && valor !== null && valor !== '') return valor;
+        }
+        return null;
+    };
+
+    /** Acha o objeto de clima, que pode vir aninhado. */
+    function normalizar(resposta) {
+        const dados = conteudo(resposta);
+
+        // Alguns provedores aninham em `current`, `weather` ou `main`.
+        return {
+            ...(dados?.main ?? {}),
+            ...(dados?.current ?? {}),
+            ...(Array.isArray(dados?.weather) ? dados.weather[0] : (dados?.weather ?? {})),
+            ...dados,
+        };
+    }
+
+    function mostrar(resposta) {
+        const dados = normalizar(resposta);
+
+        const temperatura = pegar(dados, 'temp', 'temperature', 'temperatura', 'temp_c');
+        document.getElementById('temperatura').textContent =
+            temperatura === null ? '—' : `${Math.round(Number(temperatura))}°`;
+
+        document.getElementById('local').textContent =
+            pegar(dados, 'name', 'cidade', 'city', 'localidade') ?? 'Local';
+
+        document.getElementById('condicao').textContent =
+            pegar(dados, 'description', 'condicao', 'condition', 'main', 'text') ?? '—';
+
+        const umidade = pegar(dados, 'humidity', 'umidade');
+        document.getElementById('umidade').textContent = umidade === null ? '—' : `${umidade}%`;
+
+        const vento = pegar(dados, 'wind_speed', 'vento', 'speed', 'wind_kph');
+        document.getElementById('vento').textContent = vento === null ? '—' : `${vento}`;
+
+        definicoes('#campos', dados);
+        mostrarJson(resposta);
+        resultado.hidden = false;
+    }
+
+    document.getElementById('form-cidade').addEventListener('submit', (evento) => {
+        evento.preventDefault();
+        const botao = evento.target.querySelector('button');
+
+        ocupado(botao, async () => {
+            limparAviso();
+
+            try {
+                mostrar(await chamar('cidade', { cidade: document.getElementById('cidade').value }));
+            } catch (erro) {
+                avisar(erro.message);
+            }
+        });
+    });
+
+    document.getElementById('form-coordenadas').addEventListener('submit', (evento) => {
+        evento.preventDefault();
+        const botao = evento.target.querySelector('button[type=submit]');
+
+        ocupado(botao, async () => {
+            limparAviso();
+
+            try {
+                mostrar(await chamar('coordenadas', {
+                    lat: document.getElementById('lat').value,
+                    lng: document.getElementById('lng').value,
+                }));
+            } catch (erro) {
+                avisar(erro.message);
+            }
+        });
+    });
+
+    // -----------------------------------------------------------------------
+    // Geolocalização do navegador
+    // -----------------------------------------------------------------------
+    // Exige HTTPS ou localhost, e o usuário precisa permitir. Em localhost o
+    // navegador libera — é por isso que o app roda em php -S.
+    document.getElementById('minha-posicao').addEventListener('click', (evento) => {
+        const botao = evento.currentTarget;
+
+        if (!navigator.geolocation) {
+            avisar('Este navegador não expõe geolocalização.', 'alerta');
+            return;
+        }
+
+        ocupado(botao, () =>
+            new Promise((resolver) => {
+                navigator.geolocation.getCurrentPosition(
+                    ({ coords }) => {
+                        document.getElementById('lat').value = coords.latitude.toFixed(4);
+                        document.getElementById('lng').value = coords.longitude.toFixed(4);
+                        document.getElementById('form-coordenadas')
+                            .requestSubmit(document.querySelector('#form-coordenadas button[type=submit]'));
+                        resolver();
+                    },
+                    (erro) => {
+                        avisar(`Não foi possível obter a localização: ${erro.message}`, 'alerta');
+                        resolver();
+                    },
+                    { timeout: 10_000 }
+                );
+            })
+        );
+    });
+</script>
+
+</body>
+</html>

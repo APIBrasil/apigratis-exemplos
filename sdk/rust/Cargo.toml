@@ -1,0 +1,33 @@
+[package]
+name = "apibrasil-exemplos"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.86"
+publish = false
+description = "Exemplos da SDK oficial Rust da APIBrasil"
+
+[dependencies]
+apibrasil = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+
+[[example]]
+name = "01-conta-e-saldo"
+path = "examples/01-conta-e-saldo.rs"
+
+[[example]]
+name = "02-consultas-por-credito"
+path = "examples/02-consultas-por-credito.rs"
+
+[[example]]
+name = "03-whatsapp"
+path = "examples/03-whatsapp.rs"
+
+[[example]]
+name = "04-servicos-device"
+path = "examples/04-servicos-device.rs"
+
+[[example]]
+name = "05-erros-e-retry"
+path = "examples/05-erros-e-retry.rs"

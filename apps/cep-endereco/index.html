@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>CEP e endereço — APIBrasil</title>
+    <link rel="stylesheet" href="../_comum/app.css">
+</head>
+<body>
+
+<h1>CEP e endereço</h1>
+<p class="sutil">Autocompletar de formulário — o caso de uso clássico do CEP.</p>
+
+<h2>Formulário de entrega</h2>
+<p class="sutil pequeno">
+    Digite o CEP e saia do campo: os demais são preenchidos sozinhos. É o padrão
+    de checkout — o usuário digita 8 dígitos em vez de seis campos.
+</p>
+
+<form class="grade" id="form-endereco" autocomplete="off">
+    <label>
+        CEP
+        <input id="cep" class="numerico" inputmode="numeric" maxlength="9"
+               value="01001000" placeholder="01001-000" required>
+    </label>
+    <label>
+        Logradouro
+        <input id="logradouro" readonly>
+    </label>
+    <label>
+        Número
+        <input id="numero" inputmode="numeric" placeholder="123">
+    </label>
+    <label>
+        Complemento
+        <input id="complemento" placeholder="apto 45">
+    </label>
+    <label>
+        Bairro
+        <input id="bairro" readonly>
+    </label>
+    <label>
+        Cidade
+        <input id="cidade" readonly>
+    </label>
+    <label>
+        UF
+        <input id="uf" class="maiuscula" maxlength="2" readonly>
+    </label>
+</form>
+
+<div id="mensagem" class="mensagem" hidden></div>
+
+<div class="cartao" id="cartao-geo" hidden>
+    <h3>Geolocalização</h3>
+    <dl id="geo"></dl>
+    <p class="acoes"><a id="mapa" href="#" target="_blank" rel="noopener">Ver no mapa</a></p>
+</div>
+
+<h2>Navegando ao contrário</h2>
+<p class="sutil pequeno">
+    Sem o CEP em mãos: UF → cidade → bairro, cada select alimentado pelo anterior.
+</p>
+
+<form class="grade" id="form-cascata">
+    <label>
+        UF
+        <select id="sel-uf"><option value="">Carregando…</option></select>
+    </label>
+    <label>
+        Cidade
+        <select id="sel-cidade" disabled><option value="">—</option></select>
+    </label>
+    <label>
+        Bairro
+        <select id="sel-bairro" disabled><option value="">—</option></select>
+    </label>
+</form>
+
+<h2>Cidades por DDD</h2>
+<form class="linha" id="form-ddd">
+    <label>
+        DDD
+        <input id="ddd" class="numerico" inputmode="numeric" maxlength="2" value="11" required>
+    </label>
+    <button type="submit">Buscar</button>
+</form>
+
+<div class="rolagem">
+    <table id="tabela-ddd" hidden>
+        <thead><tr></tr></thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<details hidden>
+    <summary>Resposta completa do gateway</summary>
+    <pre id="json"></pre>
+</details>
+
+<footer>
+    O serviço <code>/cep</code> tem mais actions do que este app usa:
+    <code>cep</code>, <code>estados</code>, <code>cidades</code>,
+    <code>bairros</code>, <code>cidadesPorDDD</code> e
+    <code>distancia/calcular</code>.
+</footer>
+
+<script type="module">
+    import {
+        chamar, conteudo, avisar, limparAviso, ocupado,
+        definicoes, tabela, primeiraLista, opcoes, mostrarJson,
+    } from '../_comum/app.js';
+
+    // -----------------------------------------------------------------------
+    // Autocompletar por CEP
+    // -----------------------------------------------------------------------
+    const campoCep = document.getElementById('cep');
+
+    /** Nomes de campo variam por provedor — pega o primeiro que existir. */
+    const pegar = (objeto, ...chaves) => {
+        for (const chave of chaves) {
+            const valor = objeto?.[chave];
+            if (valor !== undefined && valor !== null && valor !== '') return String(valor);
+        }
+        return '';
+    };
+
+    async function buscarCep() {
+        const cep = campoCep.value.replace(/\D/g, '');
+        if (cep.length !== 8) return;
+
+        limparAviso();
+        document.getElementById('cartao-geo').hidden = true;
+
+        // Feedback imediato: some melhor que um formulário parado.
+        for (const id of ['logradouro', 'bairro', 'cidade', 'uf']) {
+            document.getElementById(id).value = '…';
+        }
+
+        try {
+            const resposta = await chamar('cep', { cep });
+            const dados = conteudo(resposta);
+
+            document.getElementById('logradouro').value =
+                pegar(dados, 'logradouro', 'street', 'endereco');
+            document.getElementById('bairro').value = pegar(dados, 'bairro', 'neighborhood');
+            document.getElementById('cidade').value = pegar(dados, 'cidade', 'city', 'localidade');
+            document.getElementById('uf').value = pegar(dados, 'uf', 'state', 'estado');
+
+            // Geolocalização, quando o provedor devolve.
+            const lat = pegar(dados, 'latitude', 'lat');
+            const lng = pegar(dados, 'longitude', 'lng', 'lon');
+
+            if (lat && lng) {
+                definicoes('#geo', { latitude: lat, longitude: lng, altitude: dados.altitude });
+                document.getElementById('mapa').href =
+                    `https://www.google.com/maps?q=${encodeURIComponent(`${lat},${lng}`)}`;
+                document.getElementById('cartao-geo').hidden = false;
+            }
+
+            mostrarJson(resposta);
+            document.getElementById('numero').focus();
+        } catch (erro) {
+            for (const id of ['logradouro', 'bairro', 'cidade', 'uf']) {
+                document.getElementById(id).value = '';
+            }
+            avisar(erro.message);
+        }
+    }
+
+    // `change` em vez de `input`: só busca quando o usuário termina de digitar,
+    // e não uma chamada por tecla.
+    campoCep.addEventListener('change', buscarCep);
+    campoCep.addEventListener('blur', buscarCep);
+
+    // -----------------------------------------------------------------------
+    // UF → cidade → bairro
+    // -----------------------------------------------------------------------
+    const selUf = document.getElementById('sel-uf');
+    const selCidade = document.getElementById('sel-cidade');
+    const selBairro = document.getElementById('sel-bairro');
+
+    /** Extrai uma lista de rótulos da resposta, qualquer que seja o formato. */
+    function nomes(resposta, ...chaves) {
+        const dados = conteudo(resposta);
+        const lista = Array.isArray(dados) ? dados : (primeiraLista(dados) ?? []);
+
+        return lista
+            .map((item) => (typeof item === 'string' ? item : pegar(item, ...chaves)))
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    }
+
+    try {
+        const resposta = await chamar('estados');
+        const dados = conteudo(resposta);
+        const lista = Array.isArray(dados) ? dados : (primeiraLista(dados) ?? []);
+
+        opcoes(selUf, lista, {
+            valor: (item) => (typeof item === 'string' ? item : pegar(item, 'uf', 'sigla', 'id')),
+            rotulo: (item) => (typeof item === 'string' ? item : pegar(item, 'nome', 'name', 'uf', 'sigla')),
+            vazio: 'selecione',
+        });
+    } catch {
+        // Sem device de CEP configurado, a cascata fica indisponível — o resto
+        // do app continua funcionando.
+        opcoes(selUf, [], { vazio: 'indisponível' });
+    }
+
+    selUf.addEventListener('change', async () => {
+        opcoes(selCidade, [], { vazio: 'carregando…' });
+        opcoes(selBairro, [], { vazio: '—' });
+
+        if (!selUf.value) return;
+
+        try {
+            const lista = nomes(await chamar('cidades', { uf: selUf.value }), 'cidade', 'nome', 'name');
+            opcoes(selCidade, lista, { vazio: 'selecione' });
+        } catch (erro) {
+            opcoes(selCidade, [], { vazio: 'erro' });
+            avisar(erro.message, 'alerta');
+        }
+    });
+
+    selCidade.addEventListener('change', async () => {
+        opcoes(selBairro, [], { vazio: 'carregando…' });
+
+        if (!selCidade.value) return;
+
+        try {
+            const lista = nomes(
+                await chamar('bairros', { uf: selUf.value, cidade: selCidade.value }),
+                'bairro', 'nome', 'name'
+            );
+            opcoes(selBairro, lista, { vazio: 'selecione' });
+        } catch (erro) {
+            opcoes(selBairro, [], { vazio: 'erro' });
+            avisar(erro.message, 'alerta');
+        }
+    });
+
+    // -----------------------------------------------------------------------
+    // Cidades por DDD
+    // -----------------------------------------------------------------------
+    document.getElementById('form-ddd').addEventListener('submit', (evento) => {
+        evento.preventDefault();
+        const botao = evento.target.querySelector('button');
+
+        ocupado(botao, async () => {
+            limparAviso();
+
+            try {
+                const resposta = await chamar('ddd', { ddd: document.getElementById('ddd').value });
+                const dados = conteudo(resposta);
+                const lista = Array.isArray(dados) ? dados : (primeiraLista(dados) ?? []);
+
+                // Lista de strings vira lista de objetos para a tabela.
+                const linhas = lista.map((item) =>
+                    typeof item === 'string' ? { cidade: item } : item
+                );
+
+                tabela('#tabela-ddd', linhas);
+                mostrarJson(resposta);
+            } catch (erro) {
+                avisar(erro.message);
+            }
+        });
+    });
+
+    buscarCep();
+</script>
+
+</body>
+</html>

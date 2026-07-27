@@ -1,0 +1,11 @@
+{
+  "jsonrpc": "2.0",
+  "id": "descoberta",
+  "method": "tools/call",
+  "params": {
+    "name": "apibrasil.discovery.catalog",
+    "arguments": {
+      "search": "cep"
+    }
+  }
+}

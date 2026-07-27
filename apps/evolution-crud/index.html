@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Instâncias Evolution — APIBrasil</title>
+    <link rel="stylesheet" href="../_comum/app.css">
+    <style>body { --largura: 72rem; }</style>
+</head>
+<body>
+
+<h1>Instâncias Evolution</h1>
+<p class="sutil">Criar, conectar, consultar e apagar. O token fica no servidor.</p>
+
+<div id="mensagem" class="mensagem" hidden></div>
+
+<h2>Novo device</h2>
+<p class="sutil pequeno">
+    São duas etapas: primeiro o <strong>device</strong> (registro na conta, exige
+    SecretKey), depois a <strong>instância</strong> Evolution — que é o que gera
+    o QR Code.
+</p>
+
+<form class="linha" id="form-device">
+    <label class="cresce">
+        Nome do device
+        <input id="nome-device" placeholder="ex: zap01" maxlength="40" required>
+    </label>
+    <label class="cresce">
+        Servidor
+        <select id="servidor" required>
+            <option value="">Carregando…</option>
+        </select>
+    </label>
+    <button type="submit" class="primario">Criar device</button>
+</form>
+
+<h2>Devices</h2>
+<div class="acoes">
+    <button type="button" id="recarregar">Recarregar</button>
+</div>
+
+<div class="rolagem">
+    <table>
+        <thead>
+            <tr>
+                <th>Device</th>
+                <th>API</th>
+                <th>Token</th>
+                <th>Estado</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody id="corpo">
+            <tr><td colspan="5" class="carregando">Carregando…</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<dialog id="modal">
+    <h2>QR Code</h2>
+    <div class="corpo-modal"></div>
+    <div class="acoes"><button type="button" id="fechar">Fechar</button></div>
+</dialog>
+
+<footer>
+    O <code>instanceName</code> precisa ser igual ao <code>device_name</code> —
+    é assim que o gateway amarra a instância ao device.
+</footer>
+
+<script type="module">
+    import { chamar, conteudo, avisar, limparAviso, ocupado, mostrarQrCode, opcoes }
+        from '../_comum/app.js';
+
+    const corpo = document.getElementById('corpo');
+
+    function linhaAviso(texto) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 5;
+        td.className = 'carregando';
+        td.textContent = texto;
+        tr.append(td);
+        return tr;
+    }
+
+    function celula(texto) {
+        const td = document.createElement('td');
+        td.textContent = texto ?? '—';
+        return td;
+    }
+
+    function botao(rotulo, className, aoClicar) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = `miudo ${className ?? ''}`.trim();
+        b.textContent = rotulo;
+        b.addEventListener('click', () => ocupado(b, () => aoClicar()));
+        return b;
+    }
+
+    // -----------------------------------------------------------------------
+    // Servidores — o server_search é obrigatório em /devices/store
+    // -----------------------------------------------------------------------
+    async function carregarServidores() {
+        try {
+            const resposta = await chamar('servidores');
+            const servidores = Array.isArray(resposta)
+                ? resposta
+                : (resposta.servers ?? resposta.data ?? []);
+
+            opcoes('#servidor', servidores, {
+                valor: (s) => s.search ?? s.server_search ?? s.id,
+                rotulo: (s) => s.name ?? s.host ?? s.search,
+                vazio: servidores.length ? undefined : 'nenhum servidor disponível',
+            });
+        } catch (erro) {
+            opcoes('#servidor', [], { vazio: 'erro ao carregar' });
+            avisar(`Servidores: ${erro.message}`, 'alerta');
+        }
+    }
+
+    document.getElementById('form-device').addEventListener('submit', (evento) => {
+        evento.preventDefault();
+        const botaoSubmit = evento.target.querySelector('button');
+
+        ocupado(botaoSubmit, async () => {
+            try {
+                const resposta = await chamar('criar-device', {
+                    nome: document.getElementById('nome-device').value.trim(),
+                    servidor: document.getElementById('servidor').value,
+                });
+
+                avisar(
+                    `Device criado. DeviceToken: ${resposta.device?.device_token ?? '—'}`,
+                    'ok'
+                );
+                await carregar();
+            } catch (erro) {
+                avisar(erro.message);
+            }
+        });
+    });
+
+    // -----------------------------------------------------------------------
+    // Lista de devices
+    // -----------------------------------------------------------------------
+    async function carregar() {
+        corpo.replaceChildren(linhaAviso('Carregando…'));
+
+        try {
+            const resposta = await chamar('listar');
+            const devices = Array.isArray(resposta) ? resposta : (resposta.devices ?? []);
+
+            if (devices.length === 0) {
+                corpo.replaceChildren(linhaAviso('Nenhum device na conta.'));
+                return;
+            }
+
+            corpo.replaceChildren();
+
+            for (const device of devices) {
+                const token = device.device_token ?? device.search ?? '';
+                const nome = device.device_name ?? '';
+                const tr = document.createElement('tr');
+
+                tr.append(celula(nome), celula(device.api?.name ?? device.api_name));
+
+                const tdToken = document.createElement('td');
+                const codigo = document.createElement('code');
+                codigo.textContent = token ? `${token.slice(0, 8)}…` : '—';
+                codigo.title = token;
+                tdToken.append(codigo);
+                tr.append(tdToken);
+
+                const tdEstado = celula('—');
+                tr.append(tdEstado);
+
+                const tdAcoes = document.createElement('td');
+                const acoes = document.createElement('div');
+                acoes.className = 'acoes';
+                acoes.style.margin = '0';
+
+                acoes.append(
+                    botao('Conectar', null, async () => {
+                        try {
+                            const resposta = await chamar('criar-instancia', {
+                                deviceToken: token,
+                                nome,
+                            });
+
+                            // Na Evolution o QR está em response.qrcode.base64;
+                            // na API WhatsApp nativa, em response.qrcode.
+                            mostrarQrCode(`QR Code — ${nome}`, conteudo(resposta)?.qrcode, resposta);
+                        } catch (erro) {
+                            avisar(erro.message);
+                        }
+                    }),
+
+                    botao('Estado', null, async () => {
+                        try {
+                            const dados = conteudo(await chamar('estado', { deviceToken: token }));
+                            const estado = dados?.instance?.state ?? dados?.state;
+
+                            const selo = document.createElement('span');
+                            selo.className = `selo ${estado === 'open' || estado === 'CONNECTED' ? 'ok' : ''}`;
+                            selo.textContent = estado ?? JSON.stringify(dados).slice(0, 40);
+                            tdEstado.replaceChildren(selo);
+                        } catch (erro) {
+                            tdEstado.textContent = erro.message;
+                        }
+                    }),
+
+                    botao('Reiniciar', null, async () => {
+                        try {
+                            await chamar('reiniciar', { deviceToken: token });
+                            avisar(`Instância "${nome}" reiniciada.`, 'ok');
+                        } catch (erro) {
+                            avisar(erro.message);
+                        }
+                    }),
+
+                    botao('Apagar', 'perigo', async () => {
+                        if (!confirm(`Apagar a instância "${nome}"? A sessão será perdida.`)) return;
+
+                        try {
+                            await chamar('apagar', { deviceToken: token });
+                            avisar(`Instância "${nome}" apagada.`, 'ok');
+                            await carregar();
+                        } catch (erro) {
+                            avisar(erro.message);
+                        }
+                    })
+                );
+
+                tdAcoes.append(acoes);
+                tr.append(tdAcoes);
+                corpo.append(tr);
+            }
+        } catch (erro) {
+            corpo.replaceChildren(linhaAviso('Não foi possível carregar.'));
+            avisar(erro.message);
+        }
+    }
+
+    document.getElementById('recarregar').addEventListener('click', (e) =>
+        ocupado(e.currentTarget, carregar)
+    );
+    document.getElementById('fechar').addEventListener('click', () =>
+        document.getElementById('modal').close()
+    );
+
+    limparAviso();
+    carregarServidores();
+    carregar();
+</script>
+
+</body>
+</html>

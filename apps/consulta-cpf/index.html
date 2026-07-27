@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Consulta CPF — APIBrasil</title>
+    <link rel="stylesheet" href="../_comum/app.css">
+</head>
+<body>
+
+<h1>Consulta CPF</h1>
+<p class="sutil">Dados cadastrais e score de crédito. O token fica no servidor.</p>
+
+<form class="grade" id="formulario">
+    <label>
+        CPF
+        <input id="cpf" class="numerico" inputmode="numeric" value="00000000000"
+               placeholder="com ou sem pontuação" autocomplete="off" required>
+    </label>
+    <label>
+        Produto
+        <select id="tipo">
+            <option value="cadastro">Dados cadastrais</option>
+            <option value="serasa-score">Serasa · score</option>
+            <option value="serasa-premium">Serasa · premium</option>
+            <option value="spc-serasa">SPC + Serasa (débitos)</option>
+            <option value="cred-plus">Cred Plus</option>
+        </select>
+    </label>
+    <label>
+        Nascimento <span class="sutil">(alguns birôs exigem)</span>
+        <input id="nascimento" placeholder="dd/mm/aaaa" maxlength="10" autocomplete="off">
+    </label>
+    <button type="submit" class="primario">Consultar</button>
+</form>
+
+<div id="mensagem" class="mensagem" hidden></div>
+
+<section id="resultado" hidden>
+    <div id="cobranca" class="mensagem" hidden></div>
+
+    <div class="numeros" id="destaques" hidden></div>
+
+    <dl id="campos"></dl>
+
+    <div class="rolagem">
+        <table id="tabela" hidden>
+            <thead><tr></tr></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <details hidden>
+        <summary>Resposta completa do gateway</summary>
+        <pre id="json"></pre>
+    </details>
+</section>
+
+<footer>
+    A consulta de CPF exige cadastro prévio na plataforma, e alguns produtos
+    exigem conta PJ. <strong>403 nessas rotas costuma ser cadastro, não código.</strong>
+</footer>
+
+<script type="module">
+    import {
+        chamar, conteudo, cobranca, avisar, limparAviso, ocupado,
+        definicoes, tabela, primeiraLista, mostrarJson, moeda,
+    } from '../_comum/app.js';
+
+    const formulario = document.getElementById('formulario');
+    const botao = formulario.querySelector('button[type=submit]');
+    const resultado = document.getElementById('resultado');
+
+    /** Campos que merecem destaque grande quando aparecem na resposta. */
+    const DESTAQUES = {
+        score: 'Score',
+        pontuacao: 'Pontuação',
+        nome: 'Nome',
+        situacao: 'Situação',
+        total_debitos: 'Total de débitos',
+    };
+
+    function montarDestaques(dados) {
+        const alvo = document.getElementById('destaques');
+        alvo.replaceChildren();
+
+        for (const [chave, rotulo] of Object.entries(DESTAQUES)) {
+            const valor = dados?.[chave];
+            if (valor === undefined || valor === null || valor === '') continue;
+
+            const caixa = document.createElement('div');
+            caixa.className = 'numero';
+
+            const numero = document.createElement('div');
+            numero.className = 'valor';
+            numero.textContent = chave.includes('debito') ? moeda(valor) : String(valor);
+
+            const legenda = document.createElement('div');
+            legenda.className = 'rotulo';
+            legenda.textContent = rotulo;
+
+            caixa.append(numero, legenda);
+            alvo.append(caixa);
+        }
+
+        alvo.hidden = alvo.childElementCount === 0;
+    }
+
+    formulario.addEventListener('submit', (evento) => {
+        evento.preventDefault();
+
+        ocupado(botao, async () => {
+            limparAviso();
+            resultado.hidden = true;
+
+            try {
+                const resposta = await chamar('consultar', {
+                    cpf: document.getElementById('cpf').value,
+                    tipo: document.getElementById('tipo').value,
+                    nascimento: document.getElementById('nascimento').value,
+                });
+
+                const dados = conteudo(resposta);
+
+                const custo = cobranca(resposta);
+                const caixa = document.getElementById('cobranca');
+
+                if (custo) {
+                    caixa.className = `mensagem ${custo.homolog ? 'alerta' : 'ok'}`;
+                    caixa.textContent = custo.homolog
+                        ? 'Modo homologação: dados fictícios, sem cobrança.'
+                        : `Custo desta consulta: ${moeda(custo.custo)} · saldo restante: ${moeda(custo.saldo)}`;
+                    caixa.hidden = false;
+                } else {
+                    caixa.hidden = true;
+                }
+
+                montarDestaques(dados);
+                definicoes('#campos', dados);
+                tabela('#tabela', primeiraLista(dados) ?? []);
+                mostrarJson(resposta);
+
+                resultado.hidden = false;
+            } catch (erro) {
+                avisar(erro.message);
+            }
+        });
+    });
+</script>
+
+</body>
+</html>

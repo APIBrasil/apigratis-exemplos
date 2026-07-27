@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Consulta CNPJ — token no cliente (só uso interno)</title>
+    <style>
+        :root { color-scheme: light dark; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 44rem;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            line-height: 1.5;
+        }
+        form { display: grid; gap: .5rem; margin: 1.5rem 0; }
+        input { padding: .625rem; font: inherit; border: 1px solid #a1a1aa; border-radius: .375rem; }
+        button { padding: .625rem 1.25rem; font: inherit; cursor: pointer; border-radius: .375rem; border: 0; background: #2563eb; color: #fff; }
+        button:disabled { opacity: .5; cursor: progress; }
+        pre { background: #f4f4f5; padding: 1rem; border-radius: .375rem; overflow-x: auto; }
+        .erro { color: #b91c1c; }
+        .aviso { background: #fef2f2; border-left: 3px solid #dc2626; padding: .75rem 1rem; border-radius: .25rem; }
+        @media (prefers-color-scheme: dark) {
+            pre { background: #27272a; }
+            .aviso { background: #450a0a; }
+        }
+    </style>
+</head>
+<body>
+
+<h1>Consulta CNPJ</h1>
+
+<p class="aviso">
+    <strong>Não publique esta página.</strong> O Bearer Token que você digitar
+    fica visível no DevTools e é enviado do navegador — qualquer visitante
+    consegue lê-lo e gastar o seu saldo.
+    <br><br>
+    Use só em ferramenta interna, na sua máquina, ou em protótipo descartável.
+    Para qualquer coisa pública, o padrão é <a href="com-proxy.html">com-proxy.html</a>.
+</p>
+
+<form id="formulario">
+    <label>
+        Bearer Token
+        <input id="bearer" type="password" placeholder="cole o JWT aqui" required autocomplete="off">
+    </label>
+    <label>
+        CNPJ
+        <input id="cnpj" inputmode="numeric" value="00000000000000" required>
+    </label>
+    <button type="submit">Consultar (homologação)</button>
+</form>
+
+<pre id="resultado">Informe o token e o CNPJ.</pre>
+
+<script>
+    const BASE = 'https://gateway.apibrasil.io/api/v2';
+
+    const formulario = document.getElementById('formulario');
+    const resultado = document.getElementById('resultado');
+    const botao = formulario.querySelector('button');
+
+    formulario.addEventListener('submit', async (evento) => {
+        evento.preventDefault();
+
+        // O token é digitado, não embutido no arquivo. Assim ao menos o HTML
+        // pode ser comitado sem vazar credencial — mas ele ainda trafega do
+        // navegador, o que é o problema de fundo.
+        const bearer = document.getElementById('bearer').value.trim();
+        const cnpj = document.getElementById('cnpj').value.replace(/\D/g, '');
+
+        botao.disabled = true;
+        resultado.className = '';
+        resultado.textContent = 'Consultando…';
+
+        try {
+            // Rota por crédito: só o Authorization, sem DeviceToken.
+            const resposta = await fetch(`${BASE}/consulta/cnpj/credits`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${bearer}`,
+                },
+                // homolog: true evita debitar saldo enquanto você testa.
+                body: JSON.stringify({ cnpj, homolog: true }),
+            });
+
+            const dados = await resposta.json();
+
+            if (!resposta.ok) {
+                // 401 bearer · 402 saldo · 403 permissão · 422 payload · 429 limite
+                throw new Error(dados.message ?? `HTTP ${resposta.status}`);
+            }
+
+            // O envelope é sempre o mesmo:
+            // { error, message, balance, tax, valor_consulta, data }
+            resultado.textContent = JSON.stringify(dados, null, 2);
+        } catch (erro) {
+            resultado.className = 'erro';
+            resultado.textContent = erro.message;
+        } finally {
+            botao.disabled = false;
+        }
+    });
+</script>
+
+</body>
+</html>

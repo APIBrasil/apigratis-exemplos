@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Envio de SMS — APIBrasil</title>
+    <link rel="stylesheet" href="../_comum/app.css">
+    <style>
+        .contador { font-variant-numeric: tabular-nums; }
+        .contador.estourou { color: var(--erro); font-weight: 600; }
+    </style>
+</head>
+<body>
+
+<h1>Envio de SMS</h1>
+<p class="sutil">Um ou vários destinatários, com relatório de entrega por número.</p>
+
+<div class="mensagem alerta">
+    <strong>Isto gasta dinheiro.</strong> Cada SMS é cobrado e não tem desfazer.
+    Em homologação (padrão) nada é enviado de verdade; com
+    <code>APIBRASIL_HOMOLOG=0</code> e a opção "Crédito", os envios são reais.
+</div>
+
+<form class="grade" id="formulario">
+    <label style="grid-column: 1 / -1">
+        Destinatários <span class="sutil">(um por linha, com DDI: 5511999999999)</span>
+        <textarea id="numeros" rows="4" required>5511999999999</textarea>
+    </label>
+    <label style="grid-column: 1 / -1">
+        Mensagem
+        <textarea id="mensagem-texto" rows="3" maxlength="160" required>Seu código de verificação: 123456</textarea>
+        <span class="sutil pequeno contador" id="contador">0/160</span>
+    </label>
+    <label>
+        Operadora
+        <select id="operadora">
+            <option value="claro">Claro</option>
+            <option value="vivo">Vivo</option>
+            <option value="tim">TIM</option>
+            <option value="oi">Oi</option>
+        </select>
+    </label>
+    <label>
+        Cobrança
+        <select id="modo">
+            <option value="device">Device (plano)</option>
+            <option value="credito">Crédito (saldo)</option>
+        </select>
+    </label>
+    <button type="submit" class="primario">Enviar</button>
+</form>
+
+<div id="mensagem" class="mensagem" hidden></div>
+
+<section id="resultado" hidden>
+    <h2>Relatório</h2>
+    <div class="rolagem">
+        <table>
+            <thead>
+                <tr>
+                    <th>Número</th>
+                    <th>Situação</th>
+                    <th>Detalhe</th>
+                </tr>
+            </thead>
+            <tbody id="corpo"></tbody>
+        </table>
+    </div>
+
+    <div class="acoes">
+        <button type="button" id="exportar">Exportar CSV</button>
+    </div>
+</section>
+
+<footer>
+    160 caracteres é o limite de um SMS single-part. Acima disso a operadora
+    fragmenta e <strong>cobra cada parte</strong> — por isso o campo trava em 160.
+</footer>
+
+<script type="module">
+    import { chamar, avisar, limparAviso, ocupado, exportarCsv } from '../_comum/app.js';
+
+    /** Teto de destinatários por lote — trava contra disparo acidental. */
+    const MAXIMO = 20;
+
+    /** Pausa entre envios, para não bater no rate limit por minuto. */
+    const PAUSA_MS = 350;
+
+    const campoTexto = document.getElementById('mensagem-texto');
+    const contador = document.getElementById('contador');
+    const corpo = document.getElementById('corpo');
+
+    function atualizarContador() {
+        const total = campoTexto.value.length;
+        contador.textContent = `${total}/160`;
+        contador.classList.toggle('estourou', total >= 160);
+    }
+
+    campoTexto.addEventListener('input', atualizarContador);
+    atualizarContador();
+
+    const pausa = (ms) => new Promise((resolver) => setTimeout(resolver, ms));
+
+    /** Uma linha do relatório, atualizável conforme o envio progride. */
+    function novaLinha(numero) {
+        const tr = document.createElement('tr');
+
+        const tdNumero = document.createElement('td');
+        tdNumero.textContent = numero;
+
+        const tdSituacao = document.createElement('td');
+        const selo = document.createElement('span');
+        selo.className = 'selo';
+        selo.textContent = 'na fila';
+        tdSituacao.append(selo);
+
+        const tdDetalhe = document.createElement('td');
+        tdDetalhe.className = 'sutil pequeno';
+
+        tr.append(tdNumero, tdSituacao, tdDetalhe);
+        corpo.append(tr);
+
+        return {
+            marcar(texto, tipo, detalhe = '') {
+                selo.className = `selo ${tipo}`;
+                selo.textContent = texto;
+                tdDetalhe.textContent = detalhe;
+            },
+        };
+    }
+
+    let relatorio = [];
+
+    document.getElementById('formulario').addEventListener('submit', (evento) => {
+        evento.preventDefault();
+        const botao = evento.target.querySelector('button[type=submit]');
+
+        ocupado(botao, async () => {
+            limparAviso();
+            corpo.replaceChildren();
+            relatorio = [];
+
+            const numeros = document.getElementById('numeros').value
+                .split('\n')
+                .map((linha) => linha.replace(/\D/g, ''))
+                .filter(Boolean);
+
+            if (numeros.length === 0) {
+                avisar('Informe ao menos um número.');
+                return;
+            }
+
+            if (numeros.length > MAXIMO) {
+                avisar(`Máximo de ${MAXIMO} destinatários por lote (recebi ${numeros.length}).`);
+                return;
+            }
+
+            // Confirmação explícita: a lista pode ter crescido sem o usuário notar.
+            if (numeros.length > 1 && !confirm(`Enviar para ${numeros.length} números?`)) {
+                return;
+            }
+
+            document.getElementById('resultado').hidden = false;
+
+            const dados = {
+                mensagem: campoTexto.value,
+                operadora: document.getElementById('operadora').value,
+            };
+            const modo = document.getElementById('modo').value;
+
+            let enviados = 0;
+
+            // SEQUENCIAL, de propósito. Envio em paralelo estoura o rate limit
+            // por minuto e, pior, não dá para saber onde parar se der 429 no meio.
+            for (const [indice, numero] of numeros.entries()) {
+                const linha = novaLinha(numero);
+                linha.marcar('enviando', 'alerta');
+
+                try {
+                    const resposta = await chamar(modo, { ...dados, numero });
+
+                    enviados++;
+                    linha.marcar('enviado', 'ok', resposta.message ?? '');
+                    relatorio.push({ numero, situacao: 'enviado', detalhe: resposta.message ?? '' });
+                } catch (erro) {
+                    linha.marcar('falhou', 'erro', erro.message);
+                    relatorio.push({ numero, situacao: 'falhou', detalhe: erro.message });
+
+                    // 402 (sem saldo) e 401 não melhoram no próximo número —
+                    // seguir só queima tempo.
+                    if (/saldo|cr[eé]dito|login|expirado/i.test(erro.message)) {
+                        avisar(`Interrompido em ${indice + 1}/${numeros.length}: ${erro.message}`);
+                        break;
+                    }
+                }
+
+                if (indice < numeros.length - 1) await pausa(PAUSA_MS);
+            }
+
+            if (enviados > 0) {
+                avisar(`${enviados} de ${numeros.length} enviado(s).`, enviados === numeros.length ? 'ok' : 'alerta');
+            }
+        });
+    });
+
+    document.getElementById('exportar').addEventListener('click', () => {
+        exportarCsv('relatorio-sms.csv', ['numero', 'situacao', 'detalhe'], relatorio);
+    });
+</script>
+
+</body>
+</html>

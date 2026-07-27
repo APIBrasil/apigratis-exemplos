@@ -1,0 +1,31 @@
+{
+  "inputs": [
+    {
+      "id": "apibrasil-bearer",
+      "type": "promptString",
+      "description": "Bearer Token da APIBrasil (JWT do login)",
+      "password": true
+    },
+    {
+      "id": "apibrasil-device",
+      "type": "promptString",
+      "description": "DeviceToken da APIBrasil (serviços device-based)",
+      "password": true
+    }
+  ],
+  "servers": {
+    "apibrasil": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.apibrasil.cloud/mcp",
+        "--header",
+        "X-Apibrasil-Bearer:${input:apibrasil-bearer}",
+        "--header",
+        "DeviceToken:${input:apibrasil-device}"
+      ]
+    }
+  }
+}

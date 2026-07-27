@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Distância entre CEPs — APIBrasil</title>
+    <link rel="stylesheet" href="../_comum/app.css">
+    <style>
+        .rota { display: grid; gap: .75rem; grid-template-columns: 1fr auto 1fr; align-items: center; }
+        .rota .seta { color: var(--sutil); font-size: 1.5rem; }
+        .rota .ponta { border: 1px solid var(--borda); border-radius: var(--raio-g); padding: .875rem; }
+        .rota .ponta .cep { font-variant-numeric: tabular-nums; font-weight: 600; }
+        .rota .ponta .endereco { color: var(--sutil); font-size: .875rem; margin-top: .25rem; }
+        @media (max-width: 40rem) {
+            .rota { grid-template-columns: 1fr; }
+            .rota .seta { transform: rotate(90deg); justify-self: center; }
+        }
+    </style>
+</head>
+<body>
+
+<h1>Distância entre CEPs</h1>
+<p class="sutil">Base para cálculo de frete: km entre origem e destino.</p>
+
+<form class="grade" id="formulario">
+    <label>
+        CEP de origem
+        <input id="origem" class="numerico" inputmode="numeric" maxlength="9"
+               value="01001000" placeholder="01001-000" required>
+    </label>
+    <label>
+        CEP de destino
+        <input id="destino" class="numerico" inputmode="numeric" maxlength="9"
+               value="30130010" placeholder="30130-010" required>
+    </label>
+    <label>
+        Cobrança
+        <select id="modo">
+            <option value="device">Device (plano)</option>
+            <option value="credito">Crédito (saldo)</option>
+        </select>
+    </label>
+    <button type="submit" class="primario">Calcular</button>
+</form>
+
+<div id="mensagem" class="mensagem" hidden></div>
+
+<section id="resultado" hidden>
+    <div class="numeros">
+        <div class="numero">
+            <div class="valor" id="km">—</div>
+            <div class="rotulo">Distância</div>
+        </div>
+        <div class="numero">
+            <div class="valor" id="duracao">—</div>
+            <div class="rotulo">Tempo estimado</div>
+        </div>
+        <div class="numero">
+            <div class="valor" id="frete">—</div>
+            <div class="rotulo" id="rotulo-frete">Frete estimado</div>
+        </div>
+    </div>
+
+    <div class="rota" id="rota">
+        <div class="ponta">
+            <div class="cep" id="cep-origem">—</div>
+            <div class="endereco" id="end-origem">—</div>
+        </div>
+        <div class="seta" aria-hidden="true">→</div>
+        <div class="ponta">
+            <div class="cep" id="cep-destino">—</div>
+            <div class="endereco" id="end-destino">—</div>
+        </div>
+    </div>
+
+    <h2>Simulação de frete</h2>
+    <p class="sutil pequeno">
+        A API devolve a distância; a tabela de preço é sua. Ajuste os parâmetros e
+        veja o efeito — o cálculo é local, não gasta consulta.
+    </p>
+
+    <form class="grade" id="form-frete">
+        <label>
+            Taxa fixa (R$)
+            <input id="fixo" class="numerico" inputmode="decimal" value="15,00">
+        </label>
+        <label>
+            Por km (R$)
+            <input id="por-km" class="numerico" inputmode="decimal" value="2,40">
+        </label>
+        <label>
+            Peso (kg)
+            <input id="peso" class="numerico" inputmode="decimal" value="5">
+        </label>
+        <label>
+            Por kg (R$)
+            <input id="por-kg" class="numerico" inputmode="decimal" value="1,10">
+        </label>
+    </form>
+
+    <dl id="detalhe"></dl>
+
+    <details hidden>
+        <summary>Resposta completa do gateway</summary>
+        <pre id="json"></pre>
+    </details>
+</section>
+
+<footer>
+    A distância é rodoviária, não em linha reta — é o número que serve para frete.
+    Documentação: <a href="https://doc.apibrasil.io">doc.apibrasil.io</a>
+</footer>
+
+<script type="module">
+    import { chamar, conteudo, cobranca, avisar, limparAviso, ocupado, definicoes, mostrarJson, moeda }
+        from '../_comum/app.js';
+
+    const resultado = document.getElementById('resultado');
+
+    /** Nomes de campo variam por provedor. */
+    const pegar = (objeto, ...chaves) => {
+        for (const chave of chaves) {
+            const valor = objeto?.[chave];
+            if (valor !== undefined && valor !== null && valor !== '') return valor;
+        }
+        return null;
+    };
+
+    /** Aceita "1.234,5 km", "1234.5" e 1234.5. */
+    function paraNumero(valor) {
+        if (typeof valor === 'number') return valor;
+        if (valor === null || valor === undefined) return null;
+
+        const limpo = String(valor)
+            .replace(/[^\d,.-]/g, '')
+            .replace(/\.(?=\d{3}\b)/g, '')   // separador de milhar
+            .replace(',', '.');
+
+        const numero = Number(limpo);
+        return Number.isNaN(numero) ? null : numero;
+    }
+
+    // Distância da última consulta, para a simulação de frete.
+    let km = null;
+
+    /** Recalcula o frete localmente — sem nova chamada à API. */
+    function simularFrete() {
+        const caixa = document.getElementById('frete');
+        const rotulo = document.getElementById('rotulo-frete');
+
+        if (km === null) {
+            caixa.textContent = '—';
+            return;
+        }
+
+        const fixo = paraNumero(document.getElementById('fixo').value) ?? 0;
+        const porKm = paraNumero(document.getElementById('por-km').value) ?? 0;
+        const peso = paraNumero(document.getElementById('peso').value) ?? 0;
+        const porKg = paraNumero(document.getElementById('por-kg').value) ?? 0;
+
+        const total = fixo + km * porKm + peso * porKg;
+
+        caixa.textContent = moeda(total);
+        rotulo.textContent = `${fixo ? 'fixo + ' : ''}${km.toFixed(0)} km + ${peso} kg`;
+    }
+
+    for (const id of ['fixo', 'por-km', 'peso', 'por-kg']) {
+        document.getElementById(id).addEventListener('input', simularFrete);
+    }
+
+    /** Busca o endereço de uma ponta. Falha aqui não impede o resultado. */
+    async function preencherPonta(cep, idCep, idEndereco) {
+        document.getElementById(idCep).textContent =
+            cep.replace(/^(\d{5})(\d{3})$/, '$1-$2');
+
+        try {
+            const dados = conteudo(await chamar('endereco', { cep }));
+            const partes = [
+                pegar(dados, 'logradouro', 'street'),
+                pegar(dados, 'bairro', 'neighborhood'),
+                pegar(dados, 'cidade', 'city', 'localidade'),
+                pegar(dados, 'uf', 'state'),
+            ].filter(Boolean);
+
+            document.getElementById(idEndereco).textContent = partes.join(', ') || '—';
+        } catch {
+            // Endereço é enfeite: sem device de CEP o cálculo principal continua.
+            document.getElementById(idEndereco).textContent = '—';
+        }
+    }
+
+    document.getElementById('formulario').addEventListener('submit', (evento) => {
+        evento.preventDefault();
+        const botao = evento.target.querySelector('button[type=submit]');
+
+        ocupado(botao, async () => {
+            limparAviso();
+            resultado.hidden = true;
+            km = null;
+
+            const origem = document.getElementById('origem').value.replace(/\D/g, '');
+            const destino = document.getElementById('destino').value.replace(/\D/g, '');
+            const modo = document.getElementById('modo').value;
+
+            if (origem === destino) {
+                avisar('Origem e destino são o mesmo CEP — a distância seria zero.', 'alerta');
+                return;
+            }
+
+            try {
+                const resposta = await chamar(modo, { origem, destino });
+                const dados = conteudo(resposta);
+
+                km = paraNumero(pegar(dados, 'distancia', 'distance', 'km', 'distancia_km'));
+
+                document.getElementById('km').textContent =
+                    km === null ? '—' : `${km.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km`;
+
+                const duracao = pegar(dados, 'duracao', 'duration', 'tempo', 'tempo_estimado');
+                document.getElementById('duracao').textContent = duracao ?? '—';
+
+                definicoes('#detalhe', dados);
+                simularFrete();
+
+                const custo = cobranca(resposta);
+                if (custo && !custo.homolog) {
+                    avisar(`Custo: ${moeda(custo.custo)} · saldo: ${moeda(custo.saldo)}`, 'ok');
+                }
+
+                mostrarJson(resposta);
+                resultado.hidden = false;
+
+                // Endereços em paralelo, depois do resultado principal.
+                preencherPonta(origem, 'cep-origem', 'end-origem');
+                preencherPonta(destino, 'cep-destino', 'end-destino');
+            } catch (erro) {
+                avisar(erro.message);
+            }
+        });
+    });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Envio de WhatsApp — APIBrasil</title>
+    <link rel="stylesheet" href="../_comum/app.css">
+    <style>
+        .abas { display: flex; gap: .25rem; flex-wrap: wrap; margin: 1.5rem 0 0; }
+        .abas button { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+        .abas button[aria-selected="true"] {
+            background: var(--fundo-caixa);
+            border-color: var(--borda);
+            border-bottom-color: transparent;
+            font-weight: 600;
+        }
+        .painel {
+            border: 1px solid var(--borda);
+            border-radius: 0 var(--raio) var(--raio) var(--raio);
+            padding: 1.25rem;
+        }
+        .painel .grade { margin: 0; }
+        .historico { list-style: none; margin: 1.5rem 0; padding: 0; display: grid; gap: .5rem; }
+        .historico li {
+            display: flex;
+            gap: .75rem;
+            align-items: baseline;
+            padding: .625rem .75rem;
+            border: 1px solid var(--borda);
+            border-radius: var(--raio);
+            font-size: .9375rem;
+        }
+        .historico .quando { color: var(--sutil); font-size: .8125rem; font-variant-numeric: tabular-nums; }
+        .historico .conteudo { flex: 1; word-break: break-word; }
+    </style>
+</head>
+<body>
+
+<h1>Envio de WhatsApp</h1>
+<p class="sutil">Texto, arquivo, áudio, link e localização — com verificação de número.</p>
+
+<div class="mensagem alerta">
+    A sessão precisa estar <strong>iniciada e pareada</strong>. Se o status abaixo
+    não estiver conectado, use o app
+    <a href="../whatsapp-devices/">whatsapp-devices</a> para escanear o QR Code.
+</div>
+
+<div class="acoes">
+    <button type="button" id="verificar-sessao">Verificar sessão</button>
+    <span id="selo-sessao" class="selo">desconhecida</span>
+</div>
+
+<form class="linha" id="form-destinatario">
+    <label class="cresce">
+        Destinatário <span class="sutil">(com DDI)</span>
+        <input id="numero" class="numerico" inputmode="numeric" value="5511999999999" required>
+    </label>
+    <button type="button" id="checar-numero">Este número tem WhatsApp?</button>
+</form>
+
+<div class="abas" role="tablist">
+    <button type="button" role="tab" aria-selected="true" data-painel="texto">Texto</button>
+    <button type="button" role="tab" aria-selected="false" data-painel="arquivo">Arquivo</button>
+    <button type="button" role="tab" aria-selected="false" data-painel="audio">Áudio</button>
+    <button type="button" role="tab" aria-selected="false" data-painel="link">Link</button>
+    <button type="button" role="tab" aria-selected="false" data-painel="localizacao">Localização</button>
+</div>
+
+<div class="painel">
+    <!-- Texto -->
+    <form class="grade" data-tipo="texto">
+        <label style="grid-column: 1 / -1">
+            Mensagem
+            <textarea id="texto" rows="3" maxlength="5000" required>Olá! Enviado pela APIBrasil 👋</textarea>
+        </label>
+        <label>
+            "Digitando…" antes de entregar
+            <select id="digitando">
+                <option value="0">Sem espera</option>
+                <option value="1500" selected>1,5 s</option>
+                <option value="3000">3 s</option>
+            </select>
+        </label>
+        <label>
+            Entrega
+            <select id="entrega">
+                <option value="texto">Direta (aguarda o envio)</option>
+                <option value="texto-fila">Fila (assíncrona)</option>
+            </select>
+        </label>
+        <button type="submit" class="primario">Enviar</button>
+    </form>
+
+    <!-- Arquivo -->
+    <form class="grade" data-tipo="arquivo" hidden>
+        <label style="grid-column: 1 / -1">
+            URL pública do arquivo
+            <input id="arquivo-url" type="url" required
+                   value="https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf">
+        </label>
+        <label style="grid-column: 1 / -1">
+            Legenda
+            <input id="arquivo-legenda" value="Segue o documento">
+        </label>
+        <button type="submit" class="primario">Enviar</button>
+    </form>
+
+    <!-- Áudio -->
+    <form class="grade" data-tipo="audio" hidden>
+        <label style="grid-column: 1 / -1">
+            URL pública do áudio <span class="sutil">(convertido para mp3, máx. 6 min)</span>
+            <input id="audio-url" type="url" required
+                   value="https://filesamples.com/samples/audio/mp3/sample3.mp3">
+        </label>
+        <button type="submit" class="primario">Enviar</button>
+    </form>
+
+    <!-- Link -->
+    <form class="grade" data-tipo="link" hidden>
+        <label style="grid-column: 1 / -1">
+            URL
+            <input id="link-url" type="url" value="https://apibrasil.com.br" required>
+        </label>
+        <label style="grid-column: 1 / -1">
+            Texto acompanhante
+            <input id="link-texto" value="Conheça a plataforma">
+        </label>
+        <button type="submit" class="primario">Enviar</button>
+    </form>
+
+    <!-- Localização -->
+    <form class="grade" data-tipo="localizacao" hidden>
+        <label>
+            Latitude
+            <input id="loc-lat" class="numerico" inputmode="decimal" value="-23.5613" required>
+        </label>
+        <label>
+            Longitude
+            <input id="loc-lng" class="numerico" inputmode="decimal" value="-46.6565" required>
+        </label>
+        <label>
+            Título
+            <input id="loc-titulo" value="Av. Paulista">
+        </label>
+        <button type="submit" class="primario">Enviar</button>
+    </form>
+</div>
+
+<div id="mensagem" class="mensagem" hidden></div>
+
+<h2>Enviados nesta sessão</h2>
+<ul class="historico" id="historico">
+    <li class="sutil pequeno">Nada enviado ainda.</li>
+</ul>
+
+<details hidden>
+    <summary>Resposta completa do gateway</summary>
+    <pre id="json"></pre>
+</details>
+
+<footer>
+    O envio <strong>direto</strong> aguarda o gateway processar; a
+    <strong>fila</strong> (<code>/sendText/queue</code>) responde na hora e
+    processa depois — é o caminho para volume.
+</footer>
+
+<script type="module">
+    import { chamar, conteudo, avisar, limparAviso, ocupado, mostrarJson }
+        from '../_comum/app.js';
+
+    const campoNumero = document.getElementById('numero');
+    const historico = document.getElementById('historico');
+
+    // -----------------------------------------------------------------------
+    // Abas
+    // -----------------------------------------------------------------------
+    const abas = [...document.querySelectorAll('[role=tab]')];
+    const paineis = [...document.querySelectorAll('[data-tipo]')];
+
+    for (const aba of abas) {
+        aba.addEventListener('click', () => {
+            for (const outra of abas) {
+                outra.setAttribute('aria-selected', String(outra === aba));
+            }
+            for (const painel of paineis) {
+                painel.hidden = painel.dataset.tipo !== aba.dataset.painel;
+            }
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // Sessão e verificação de número
+    // -----------------------------------------------------------------------
+    document.getElementById('verificar-sessao').addEventListener('click', (evento) =>
+        ocupado(evento.currentTarget, async () => {
+            const selo = document.getElementById('selo-sessao');
+            limparAviso();
+
+            try {
+                const dados = conteudo(await chamar('status'));
+                const conectado = dados?.state === 'CONNECTED' || dados?.connected === true;
+
+                selo.className = `selo ${conectado ? 'ok' : 'alerta'}`;
+                selo.textContent = dados?.state ?? (conectado ? 'conectada' : 'desconectada');
+            } catch (erro) {
+                selo.className = 'selo erro';
+                selo.textContent = 'erro';
+                avisar(erro.message);
+            }
+        })
+    );
+
+    document.getElementById('checar-numero').addEventListener('click', (evento) =>
+        ocupado(evento.currentTarget, async () => {
+            limparAviso();
+
+            try {
+                const dados = conteudo(await chamar('verificar', { numero: campoNumero.value }));
+
+                // O nome do campo varia; tentamos os conhecidos.
+                const existe =
+                    dados?.numberExists ?? dados?.exists ?? dados?.status ?? dados?.isBusiness;
+
+                avisar(
+                    existe === false
+                        ? 'Este número NÃO tem WhatsApp — enviar consumiria cota sem entregar.'
+                        : `Número válido. ${JSON.stringify(dados).slice(0, 200)}`,
+                    existe === false ? 'alerta' : 'ok'
+                );
+            } catch (erro) {
+                avisar(erro.message);
+            }
+        })
+    );
+
+    // -----------------------------------------------------------------------
+    // Histórico local
+    // -----------------------------------------------------------------------
+    function registrar(tipo, resumo) {
+        // Limpa o placeholder na primeira mensagem.
+        if (historico.querySelector('.sutil')) historico.replaceChildren();
+
+        const li = document.createElement('li');
+
+        const quando = document.createElement('span');
+        quando.className = 'quando';
+        quando.textContent = new Date().toLocaleTimeString('pt-BR');
+
+        const selo = document.createElement('span');
+        selo.className = 'selo';
+        selo.textContent = tipo;
+
+        const conteudoEl = document.createElement('span');
+        conteudoEl.className = 'conteudo';
+        conteudoEl.textContent = resumo;
+
+        li.append(quando, selo, conteudoEl);
+        historico.prepend(li);
+    }
+
+    // -----------------------------------------------------------------------
+    // Envios
+    // -----------------------------------------------------------------------
+    /** Monta os campos específicos de cada tipo de mensagem. */
+    const CAMPOS = {
+        texto: () => ({
+            acao: document.getElementById('entrega').value,
+            dados: {
+                texto: document.getElementById('texto').value,
+                digitando: document.getElementById('digitando').value,
+            },
+            resumo: document.getElementById('texto').value.slice(0, 80),
+        }),
+        arquivo: () => ({
+            acao: 'arquivo',
+            dados: {
+                url: document.getElementById('arquivo-url').value,
+                legenda: document.getElementById('arquivo-legenda').value,
+            },
+            resumo: document.getElementById('arquivo-url').value,
+        }),
+        audio: () => ({
+            acao: 'audio',
+            dados: { url: document.getElementById('audio-url').value },
+            resumo: document.getElementById('audio-url').value,
+        }),
+        link: () => ({
+            acao: 'link',
+            dados: {
+                url: document.getElementById('link-url').value,
+                texto: document.getElementById('link-texto').value,
+            },
+            resumo: document.getElementById('link-url').value,
+        }),
+        localizacao: () => ({
+            acao: 'localizacao',
+            dados: {
+                lat: document.getElementById('loc-lat').value,
+                lng: document.getElementById('loc-lng').value,
+                titulo: document.getElementById('loc-titulo').value,
+            },
+            resumo: `${document.getElementById('loc-lat').value}, ${document.getElementById('loc-lng').value}`,
+        }),
+    };
+
+    for (const painel of paineis) {
+        painel.addEventListener('submit', (evento) => {
+            evento.preventDefault();
+            const botao = painel.querySelector('button[type=submit]');
+
+            ocupado(botao, async () => {
+                limparAviso();
+
+                const tipo = painel.dataset.tipo;
+                const { acao, dados, resumo } = CAMPOS[tipo]();
+
+                try {
+                    const resposta = await chamar(acao, {
+                        numero: campoNumero.value,
+                        ...dados,
+                    });
+
+                    registrar(tipo, resumo);
+                    avisar(resposta.message ?? 'Enviado.', 'ok');
+                    mostrarJson(resposta);
+                } catch (erro) {
+                    avisar(erro.message);
+                }
+            });
+        });
+    }
+</script>
+
+</body>
+</html>

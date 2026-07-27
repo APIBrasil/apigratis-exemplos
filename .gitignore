@@ -1,2 +1,49 @@
-mcp-client/node_modules
-mcp-client/package-lock.json
+# Credenciais — nunca comitar
+.env
+*.env
+!.env-example
+
+# Node
+node_modules/
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# PHP
+vendor/
+composer.lock
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Go
+sdk/go/bin/
+
+# Java
+target/
+*.class
+
+# Ruby
+.bundle/
+Gemfile.lock
+
+# Rust
+target/
+Cargo.lock
+
+# C++
+build/
+cmake-build-*/
+
+# Dart / Flutter
+.dart_tool/
+.packages
+pubspec.lock
+
+# Saídas dos exemplos
+*.pdf
+*.log
+qrcode.png

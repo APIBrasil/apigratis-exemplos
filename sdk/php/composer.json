@@ -1,0 +1,13 @@
+{
+    "name": "apibrasil/exemplos-php",
+    "description": "Exemplos da SDK oficial PHP da APIBrasil",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": "^8.0",
+        "jhowbhz/apigratis-sdk-php": "^0.1"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

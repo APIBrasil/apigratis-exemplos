@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "apibrasil": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.apibrasil.cloud/mcp",
+        "--header",
+        "X-Apibrasil-Bearer:${APIBRASIL_BEARER}",
+        "--header",
+        "DeviceToken:${APIBRASIL_DEVICE_TOKEN}"
+      ],
+      "env": {
+        "APIBRASIL_BEARER": "SEU_BEARER_TOKEN",
+        "APIBRASIL_DEVICE_TOKEN": "SEU_DEVICE_TOKEN"
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+# SDK oficial Python da APIBrasil
+api-brasil>=2.0.1
+
+# Opcional: a SDK usa requests quando disponível e cai para a stdlib (urllib)
+# automaticamente. Instale se quiser o transporte com pool de conexões.
+requests>=2.31.0

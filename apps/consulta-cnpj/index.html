@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Consulta CNPJ — APIBrasil</title>
+    <link rel="stylesheet" href="../_comum/app.css">
+    <style>body { --largura: 60rem; }</style>
+</head>
+<body>
+
+<h1>Consulta CNPJ</h1>
+<p class="sutil">Cadastro, quadro societário e exportação CSV. O token fica no servidor.</p>
+
+<form class="linha" id="formulario">
+    <label class="cresce">
+        CNPJ
+        <input id="cnpj" class="numerico" inputmode="numeric" value="00000000000000"
+               placeholder="com ou sem pontuação" autocomplete="off" required>
+    </label>
+    <label>
+        Tipo
+        <select id="tipo">
+            <option value="cadastro">Cadastro básico</option>
+            <option value="socios">Quadro societário</option>
+        </select>
+    </label>
+    <button type="submit" class="primario">Consultar</button>
+</form>
+
+<div id="mensagem" class="mensagem" hidden></div>
+
+<section id="resultado" hidden>
+    <div id="cobranca" class="mensagem" hidden></div>
+
+    <dl id="campos"></dl>
+
+    <div class="rolagem">
+        <table id="tabela" hidden>
+            <thead><tr></tr></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div class="acoes">
+        <button type="button" id="exportar">Exportar CSV</button>
+    </div>
+
+    <details hidden>
+        <summary>Resposta completa do gateway</summary>
+        <pre id="json"></pre>
+    </details>
+</section>
+
+<footer>
+    Documentação: <a href="https://doc.apibrasil.io">doc.apibrasil.io</a> ·
+    Credenciais: <a href="https://apibrasil.com.br">apibrasil.com.br</a>
+</footer>
+
+<script type="module">
+    import {
+        chamar, conteudo, cobranca, avisar, limparAviso, ocupado,
+        definicoes, tabela, primeiraLista, exportarCsv, mostrarJson, moeda,
+    } from '../_comum/app.js';
+
+    const formulario = document.getElementById('formulario');
+    const botao = formulario.querySelector('button[type=submit]');
+    const resultado = document.getElementById('resultado');
+
+    // Guardado para a exportação CSV.
+    let ultima = { colunas: [], linhas: [], campos: [] };
+
+    formulario.addEventListener('submit', (evento) => {
+        evento.preventDefault();
+
+        ocupado(botao, async () => {
+            limparAviso();
+            resultado.hidden = true;
+
+            try {
+                const resposta = await chamar('consultar', {
+                    cnpj: document.getElementById('cnpj').value,
+                    tipo: document.getElementById('tipo').value,
+                });
+
+                const dados = conteudo(resposta);
+
+                // Custo e saldo restante vêm no envelope das rotas por crédito.
+                const custo = cobranca(resposta);
+                const caixaCobranca = document.getElementById('cobranca');
+
+                if (custo) {
+                    caixaCobranca.className = `mensagem ${custo.homolog ? 'alerta' : 'ok'}`;
+                    caixaCobranca.textContent = custo.homolog
+                        ? 'Modo homologação: dados fictícios, sem cobrança.'
+                        : `Custo desta consulta: ${moeda(custo.custo)} · saldo restante: ${moeda(custo.saldo)}`;
+                    caixaCobranca.hidden = false;
+                } else {
+                    caixaCobranca.hidden = true;
+                }
+
+                definicoes('#campos', dados);
+                ultima = tabela('#tabela', primeiraLista(dados) ?? []);
+
+                // Pares chave/valor do <dl>, para o CSV.
+                ultima.campos = [...document.querySelectorAll('#campos dt')].map((dt) => [
+                    dt.textContent,
+                    dt.nextElementSibling.textContent,
+                ]);
+
+                mostrarJson(resposta);
+                resultado.hidden = false;
+            } catch (erro) {
+                avisar(erro.message);
+            }
+        });
+    });
+
+    document.getElementById('exportar').addEventListener('click', () => {
+        const cnpj = document.getElementById('cnpj').value.replace(/\D/g, '');
+        exportarCsv(`cnpj-${cnpj}.csv`, ultima.colunas, ultima.linhas, ultima.campos);
+    });
+</script>
+
+</body>
+</html>

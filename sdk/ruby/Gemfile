@@ -1,0 +1,10 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+# SDK oficial Ruby da APIBrasil
+gem "apigratis-sdk-ruby"
+
+# Opcional: a SDK usa Faraday automaticamente quando ele já está carregado.
+# Sem ele, o transporte é a stdlib (net/http).
+# gem "faraday"

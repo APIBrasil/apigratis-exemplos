@@ -1,0 +1,471 @@
+/*
+ * Estilos compartilhados dos apps de exemplo.
+ *
+ * Claro e escuro pelo `color-scheme` + tokens. Nada de framework: o objetivo é
+ * que o código do app seja sobre a API, não sobre CSS.
+ */
+
+:root {
+    color-scheme: light dark;
+
+    --borda: #d4d4d8;
+    --borda-forte: #a1a1aa;
+    --fundo-caixa: #f4f4f5;
+    --sutil: #71717a;
+    --acento: #2563eb;
+    --ok: #16a34a;
+    --alerta: #d97706;
+    --erro: #dc2626;
+
+    --raio: 0.375rem;
+    --raio-g: 0.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --borda: #3f3f46;
+        --borda-forte: #52525b;
+        --fundo-caixa: #27272a;
+        --sutil: #a1a1aa;
+        --acento: #3b82f6;
+    }
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: var(--largura, 56rem);
+    margin: 0 auto;
+    padding: 2rem 1rem 4rem;
+    line-height: 1.5;
+}
+
+/* --------------------------------------------------------------------------
+ * Tipografia
+ * -------------------------------------------------------------------------- */
+
+h1 {
+    font-size: 1.5rem;
+    margin: 0 0 0.25rem;
+}
+
+h2 {
+    font-size: 1.125rem;
+    margin: 2rem 0 0.5rem;
+}
+
+h3 {
+    font-size: 1rem;
+    margin: 1.5rem 0 0.5rem;
+}
+
+.sutil {
+    color: var(--sutil);
+    margin-top: 0;
+}
+
+.pequeno {
+    font-size: 0.875rem;
+}
+
+code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.8125rem;
+    background: var(--fundo-caixa);
+    padding: 0.125rem 0.375rem;
+    border-radius: 0.25rem;
+}
+
+pre {
+    background: var(--fundo-caixa);
+    padding: 1rem;
+    border-radius: var(--raio);
+    overflow-x: auto;
+    font-size: 0.8125rem;
+    margin: 0;
+}
+
+a {
+    color: var(--acento);
+}
+
+/* --------------------------------------------------------------------------
+ * Formulários
+ * -------------------------------------------------------------------------- */
+
+form.linha {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: flex-end;
+    margin: 1.5rem 0;
+}
+
+form.grade {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    margin: 1.5rem 0;
+    align-items: end;
+}
+
+label {
+    display: grid;
+    gap: 0.25rem;
+    font-size: 0.875rem;
+    color: var(--sutil);
+}
+
+input,
+select,
+textarea {
+    padding: 0.625rem 0.75rem;
+    font: inherit;
+    font-size: 0.9375rem;
+    color: inherit;
+    background: transparent;
+    border: 1px solid var(--borda);
+    border-radius: var(--raio);
+    width: 100%;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible {
+    outline: 2px solid var(--acento);
+    outline-offset: 1px;
+}
+
+input[disabled],
+select[disabled],
+textarea[disabled] {
+    opacity: 0.6;
+}
+
+textarea {
+    resize: vertical;
+    min-height: 5rem;
+}
+
+input.numerico {
+    font-variant-numeric: tabular-nums;
+}
+
+input.maiuscula {
+    text-transform: uppercase;
+}
+
+.cresce {
+    flex: 1 1 12rem;
+}
+
+/* --------------------------------------------------------------------------
+ * Botões
+ * -------------------------------------------------------------------------- */
+
+button {
+    padding: 0.625rem 1rem;
+    font: inherit;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: inherit;
+    background: transparent;
+    border: 1px solid var(--borda);
+    border-radius: var(--raio);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+button.primario {
+    background: var(--acento);
+    border-color: var(--acento);
+    color: #fff;
+}
+
+button.perigo {
+    color: var(--erro);
+    border-color: color-mix(in srgb, var(--erro) 40%, transparent);
+}
+
+button.miudo {
+    padding: 0.375rem 0.625rem;
+    font-size: 0.8125rem;
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: progress;
+}
+
+.acoes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 1rem 0;
+}
+
+/* --------------------------------------------------------------------------
+ * Mensagens
+ * -------------------------------------------------------------------------- */
+
+.mensagem {
+    padding: 0.75rem 1rem;
+    border-radius: var(--raio);
+    border-left: 3px solid var(--borda-forte);
+    background: var(--fundo-caixa);
+    margin: 1rem 0;
+    font-size: 0.9375rem;
+}
+
+.mensagem.erro {
+    border-color: var(--erro);
+    background: color-mix(in srgb, var(--erro) 8%, transparent);
+}
+
+.mensagem.ok {
+    border-color: var(--ok);
+    background: color-mix(in srgb, var(--ok) 8%, transparent);
+}
+
+.mensagem.alerta {
+    border-color: var(--alerta);
+    background: color-mix(in srgb, var(--alerta) 8%, transparent);
+}
+
+/* --------------------------------------------------------------------------
+ * Cartões e listas de definição
+ * -------------------------------------------------------------------------- */
+
+.cartoes {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    margin: 1.5rem 0;
+}
+
+.cartao {
+    border: 1px solid var(--borda);
+    border-radius: var(--raio-g);
+    padding: 1rem;
+}
+
+.cartao h2,
+.cartao h3 {
+    margin: 0 0 0.75rem;
+    font-size: 1rem;
+}
+
+dl {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.375rem 0.75rem;
+    margin: 0;
+}
+
+dt {
+    color: var(--sutil);
+    font-size: 0.875rem;
+}
+
+dd {
+    margin: 0;
+    font-weight: 500;
+    word-break: break-word;
+}
+
+/* Números grandes de dashboard */
+.numeros {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    margin: 1.5rem 0;
+}
+
+.numero {
+    border: 1px solid var(--borda);
+    border-radius: var(--raio-g);
+    padding: 1rem;
+}
+
+.numero .valor {
+    font-size: 1.75rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+}
+
+.numero .rotulo {
+    color: var(--sutil);
+    font-size: 0.8125rem;
+    margin-top: 0.25rem;
+}
+
+/* --------------------------------------------------------------------------
+ * Tabelas
+ * -------------------------------------------------------------------------- */
+
+.rolagem {
+    overflow-x: auto;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+th,
+td {
+    text-align: left;
+    padding: 0.625rem 0.75rem;
+    border-bottom: 1px solid var(--borda);
+}
+
+th {
+    color: var(--sutil);
+    font-weight: 500;
+    font-size: 0.875rem;
+    white-space: nowrap;
+}
+
+td {
+    font-size: 0.9375rem;
+}
+
+td.numerico,
+th.numerico {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------------------
+ * Selos
+ * -------------------------------------------------------------------------- */
+
+.selo {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: color-mix(in srgb, var(--sutil) 20%, transparent);
+}
+
+.selo.ok {
+    background: color-mix(in srgb, var(--ok) 22%, transparent);
+}
+
+.selo.alerta {
+    background: color-mix(in srgb, var(--alerta) 22%, transparent);
+}
+
+.selo.erro {
+    background: color-mix(in srgb, var(--erro) 22%, transparent);
+}
+
+/* --------------------------------------------------------------------------
+ * Linha do tempo (rastreio)
+ * -------------------------------------------------------------------------- */
+
+.linha-tempo {
+    list-style: none;
+    margin: 1.5rem 0;
+    padding: 0 0 0 1.5rem;
+    border-left: 2px solid var(--borda);
+}
+
+.linha-tempo li {
+    position: relative;
+    padding: 0 0 1.5rem;
+}
+
+.linha-tempo li::before {
+    content: "";
+    position: absolute;
+    left: -1.9rem;
+    top: 0.4rem;
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 999px;
+    background: var(--borda-forte);
+    border: 2px solid Canvas;
+}
+
+.linha-tempo li:first-child::before {
+    background: var(--ok);
+}
+
+.linha-tempo .quando {
+    color: var(--sutil);
+    font-size: 0.8125rem;
+}
+
+.linha-tempo .oque {
+    font-weight: 500;
+}
+
+/* --------------------------------------------------------------------------
+ * Modal
+ * -------------------------------------------------------------------------- */
+
+dialog {
+    border: 1px solid var(--borda);
+    border-radius: var(--raio-g);
+    padding: 1.5rem;
+    max-width: 26rem;
+    width: calc(100% - 2rem);
+    background: Canvas;
+    color: CanvasText;
+}
+
+dialog::backdrop {
+    background: rgb(0 0 0 / 0.5);
+}
+
+dialog h2 {
+    margin-top: 0;
+    font-size: 1.125rem;
+}
+
+dialog img {
+    width: 100%;
+    height: auto;
+    image-rendering: pixelated;
+    border-radius: var(--raio);
+}
+
+/* --------------------------------------------------------------------------
+ * Rodapé e utilitários
+ * -------------------------------------------------------------------------- */
+
+footer {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--borda);
+    color: var(--sutil);
+    font-size: 0.875rem;
+}
+
+details {
+    margin-top: 1.5rem;
+}
+
+summary {
+    cursor: pointer;
+    color: var(--sutil);
+    font-size: 0.875rem;
+}
+
+[hidden] {
+    display: none !important;
+}
+
+.carregando {
+    color: var(--sutil);
+    font-size: 0.9375rem;
+}

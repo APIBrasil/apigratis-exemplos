@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Consulta CNPJ — via proxy (padrão correto)</title>
+    <style>
+        :root { color-scheme: light dark; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 44rem;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            line-height: 1.5;
+        }
+        form { display: flex; gap: .5rem; margin: 1.5rem 0; }
+        input { flex: 1; padding: .625rem; font: inherit; border: 1px solid #a1a1aa; border-radius: .375rem; }
+        button { padding: .625rem 1.25rem; font: inherit; cursor: pointer; border-radius: .375rem; border: 0; background: #2563eb; color: #fff; }
+        button:disabled { opacity: .5; cursor: progress; }
+        pre { background: #f4f4f5; padding: 1rem; border-radius: .375rem; overflow-x: auto; }
+        .erro { color: #b91c1c; }
+        .nota { background: #f0fdf4; border-left: 3px solid #16a34a; padding: .75rem 1rem; border-radius: .25rem; }
+        @media (prefers-color-scheme: dark) {
+            pre { background: #27272a; }
+            .nota { background: #052e16; }
+        }
+    </style>
+</head>
+<body>
+
+<h1>Consulta CNPJ</h1>
+
+<p class="nota">
+    <strong>Este é o padrão correto.</strong> A página não conhece o Bearer Token —
+    ela chama <code>proxy.php</code> no seu próprio servidor, que adiciona a
+    credencial e repassa ao gateway. Abra o DevTools: nenhum token aparece.
+</p>
+
+<form id="formulario">
+    <input id="cnpj" inputmode="numeric" placeholder="CNPJ (só números)" value="00000000000000" required>
+    <button type="submit">Consultar</button>
+</form>
+
+<pre id="resultado">Informe um CNPJ e clique em Consultar.</pre>
+
+<script>
+    const formulario = document.getElementById('formulario');
+    const campoCnpj = document.getElementById('cnpj');
+    const resultado = document.getElementById('resultado');
+    const botao = formulario.querySelector('button');
+
+    formulario.addEventListener('submit', async (evento) => {
+        evento.preventDefault();
+
+        botao.disabled = true;
+        resultado.className = '';
+        resultado.textContent = 'Consultando…';
+
+        try {
+            // Chamamos o NOSSO endpoint — nunca o gateway direto.
+            // Nenhuma credencial da APIBrasil trafega por aqui.
+            const resposta = await fetch('proxy.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cnpj: campoCnpj.value.replace(/\D/g, '') }),
+            });
+
+            const dados = await resposta.json();
+
+            if (!resposta.ok) {
+                // O proxy repassa o status do gateway, então a semântica se
+                // mantém: 402 saldo, 403 permissão, 422 payload.
+                throw new Error(dados.message ?? `HTTP ${resposta.status}`);
+            }
+
+            resultado.textContent = JSON.stringify(dados, null, 2);
+        } catch (erro) {
+            resultado.className = 'erro';
+            resultado.textContent = erro.message;
+        } finally {
+            botao.disabled = false;
+        }
+    });
+</script>
+
+</body>
+</html>
