@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consulta FIPE via WhatsApp</title>
+
+    <link rel="stylesheet" href="style.css">
+    
+</head>
+<body>
+
+    <h1>Consulta FIPE via WhatsApp</h1>
+
+    <form id="formConsulta">
+        <label for="placa">Placa do veículo:</label>
+        <input type="text" id="placa" name="placa" required>
+
+        <label for="telefone">Telefone com DDD:</label>
+        <input type="tel" id="telefone" name="telefone" required>
+
+        <button type="submit">Consultar FIPE</button>
+    </form>
+
+    <div id="resultado"></div>
+    
+    <script src="script.js"></script>
+
+</body>
+</html>
